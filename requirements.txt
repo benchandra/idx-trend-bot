@@ -1,0 +1,6 @@
+arch>=8.0
+yfinance>=1.0
+scipy
+pandas
+numpy
+requests

@@ -1,0 +1,25 @@
+#cloud-config
+# Paste this whole file into the VM's "cloud-init script" box when creating the instance (Oracle Cloud:
+# Advanced options > Management > Cloud-init script; Google Cloud: Advanced > Management > Automation, key "user-data").
+# Replace every <...> first. The VM installs itself and sends a Telegram heartbeat when it is running.
+package_update: true
+packages: [git, python3-venv, python3-pip]
+write_files:
+  - path: /home/ubuntu/bot.env
+    permissions: "0600"
+    content: |
+      TELEGRAM_TOKEN=<your Telegram bot token>
+      TELEGRAM_CHAT_ID=<your Telegram id>
+      GITHUB_REPO=<your-github-username>/idx-trend-bot
+      GITHUB_TOKEN=<fine-grained GitHub token with Contents read and write on idx-trend-bot>
+      ANTHROPIC_API_KEY=
+      APPROVAL_MODE=manual
+      BROKER=paper
+      BROKER_FEES=stockbit
+      RULES=v2
+      COMMITTEE=lite
+      START_CASH=100000000
+runcmd:
+  - [ bash, -c, "cd /home/ubuntu && sudo -u ubuntu git clone https://github.com/$(grep GITHUB_REPO bot.env | cut -d= -f2).git idx-trend-bot" ]
+  - [ bash, -c, "mv /home/ubuntu/bot.env /home/ubuntu/idx-trend-bot/deploy/.env && chown ubuntu:ubuntu /home/ubuntu/idx-trend-bot/deploy/.env" ]
+  - [ bash, -c, "cd /home/ubuntu/idx-trend-bot && sudo -u ubuntu bash deploy/install.sh" ]
