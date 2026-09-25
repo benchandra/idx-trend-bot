@@ -1,0 +1,36 @@
+name: Dashboard approvals
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: idx-bot-approvals
+  cancel-in-progress: false
+jobs:
+  record:
+    if: startsWith(github.event.issue.title, 'approve:') || startsWith(github.event.issue.title, 'halve:') || startsWith(github.event.issue.title, 'reject:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Record the decision
+        run: python -m bot.tasks approve --title "${{ github.event.issue.title }}" --by "${{ github.event.issue.user.login }}" --owner "${{ github.repository_owner }}"
+      - name: Save and close the issue
+        run: |
+          RESULT=$(cat docs/data/approve_result.txt)
+          rm -f docs/data/approve_result.txt
+          git config user.name "idx-trend-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add docs/data/approvals.json
+          git diff --cached --quiet || git commit -m "Dashboard approval: $RESULT"
+          git pull --rebase --autostash origin ${{ github.ref_name }} || true
+          git push || true
+          if [ "$RESULT" = "ignored" ]; then MSG="Ignored: only the repository owner can approve, and the title must be approve:/halve:/reject: followed by a proposal id."; else MSG="Recorded: $RESULT. It is applied at the next pre-open (08:30 WIB) or within 5 minutes on the always-on box."; fi
+          gh issue close ${{ github.event.issue.number }} --comment "$MSG"
