@@ -45,19 +45,25 @@ P = dict(
     buy_buffer=0.01, sell_buffer=0.02,
     start_capital=100_000_000, bt_start="2016-01-01",
     hold_rank=0, resize_frac=0.0, broker="ipot",  # v2: hold_rank=16, resize_frac=0.5
+    alloc="invvol",  # basket weights: invvol | erc | hrp
+    cluster_cap=0.0,  # trial 5: max share of the basket in one economic cluster (0 = off)
 )
 # All-in online fees (buy, sell) incl. levy, VAT and the 0.1% sales tax. Research of Sept 2026.
 FEES = {"ipot": (0.0019, 0.0029), "stockbit": (0.0015, 0.0025), "ajaib": (0.001513, 0.002513),
         "mirae": (0.00149, 0.00249), "bni": (0.0017, 0.0027)}
 
 
-def configure(v2: bool = False, broker: str | None = None) -> None:
+def configure(v2: bool = False, broker: str | None = None, alloc: str | None = None, cluster_cap: float | None = None) -> None:
     """Switch on the v2 rules (trial 2) and/or a broker fee profile before run()."""
     if v2:
         P.update(hold_rank=16, resize_frac=0.5)
     if broker:
         P["broker"] = broker
         P["buy_fee"], P["sell_fee"] = FEES[broker]
+    if alloc:
+        P["alloc"] = alloc
+    if cluster_cap is not None:
+        P["cluster_cap"] = cluster_cap
 
 
 def select(order: list[int], held: set[int]) -> list[int]:
@@ -255,18 +261,123 @@ def cap_weights(w: np.ndarray, cap: float) -> np.ndarray:
     return w
 
 
+def erc_weights(S: np.ndarray, iters: int = 500) -> np.ndarray:
+    """Equal risk contribution (risk parity): each name contributes the same share of portfolio
+    variance. Cyclical coordinate descent (Griveau-Billion, Richard & Roncalli 2013)."""
+    n = len(S)
+    w = np.ones(n) / n
+    b = 1.0 / n
+    for _ in range(iters):
+        w_old = w.copy()
+        for i in range(n):
+            a = S[i, i]
+            c = float(S[i] @ w - S[i, i] * w[i])
+            w[i] = (-c + math.sqrt(c * c + 4 * a * b * float(w @ S @ w))) / (2 * a)
+        w = w / w.sum()
+        if np.abs(w - w_old).max() < 1e-8:
+            break
+    return w
+
+
+def hrp_weights(S: np.ndarray, R: np.ndarray) -> np.ndarray:
+    """Hierarchical risk parity (Lopez de Prado 2016): cluster by correlation distance, then split
+    risk top-down between clusters by inverse variance. Uses no matrix inversion, so it is stable
+    when the covariance is noisy."""
+    from scipy.cluster.hierarchy import linkage, leaves_list
+    from scipy.spatial.distance import squareform
+    n = len(S)
+    if n == 1:
+        return np.array([1.0])
+    dist = np.sqrt(np.clip((1 - R) / 2, 0, 1))
+    order = list(leaves_list(linkage(squareform(dist, checks=False), method="single")))
+
+    def ivp(idx):
+        iv = 1 / np.diag(S)[idx]
+        iv = iv / iv.sum()
+        return float(iv @ S[np.ix_(idx, idx)] @ iv)
+
+    w = np.ones(n)
+    clusters = [order]
+    while clusters:
+        nxt = []
+        for c in clusters:
+            if len(c) < 2:
+                continue
+            left, right = c[: len(c) // 2], c[len(c) // 2:]
+            vl, vr = ivp(left), ivp(right)
+            alpha = 1 - vl / (vl + vr)
+            w[left] *= alpha
+            w[right] *= 1 - alpha
+            nxt += [left, right]
+        clusters = nxt
+    return w / w.sum()
+
+
+# Economic clusters for the cluster cap (trial 5): no more than P["cluster_cap"] of the basket in one.
+SECTORS = {
+    "BBCA": "banks", "BBRI": "banks", "BMRI": "banks", "BBNI": "banks", "BRIS": "banks",
+    "TLKM": "telco", "ISAT": "telco", "EXCL": "telco", "TOWR": "telco",
+    "ASII": "auto-industrial", "UNTR": "auto-industrial",
+    "UNVR": "consumer", "ICBP": "consumer", "INDF": "consumer", "MYOR": "consumer", "KLBF": "consumer",
+    "CPIN": "poultry", "JPFA": "poultry",
+    "AMRT": "retail", "MAPI": "retail", "ACES": "retail",
+    "ADRO": "coal", "PTBA": "coal", "ITMG": "coal",
+    "MEDC": "oil-gas", "PGAS": "oil-gas", "AKRA": "oil-gas",
+    "ANTM": "metals", "INCO": "metals",
+    "SMGR": "materials",
+}
+
+
+def cap_clusters(w: np.ndarray, syms: list[str], cluster_cap: float, max_w: float) -> np.ndarray:
+    """Water-filling across clusters: any cluster above cluster_cap is scaled down to it and the excess
+    is redistributed pro rata to names in clusters that still have room (per-name cap respected)."""
+    if not cluster_cap or len(w) < 2:
+        return w
+    w = w.copy()
+    groups = {}
+    for i, sname in enumerate(syms):
+        groups.setdefault(SECTORS.get(sname, sname), []).append(i)
+    for _ in range(20):
+        over = {g: idx for g, idx in groups.items() if w[idx].sum() > cluster_cap + 1e-9}
+        if not over:
+            break
+        excess = 0.0
+        for g, idx in over.items():
+            tot = w[idx].sum()
+            excess += tot - cluster_cap
+            w[idx] *= cluster_cap / tot
+        free = [i for g, idx in groups.items() if g not in over for i in idx if w[i] < max_w - 1e-9]
+        if not free or excess <= 1e-12:
+            break
+        room = np.array([max_w - w[i] for i in free])
+        add = np.minimum(room, excess * w[free] / w[free].sum()) if w[free].sum() > 0 else np.minimum(room, excess / len(free))
+        for i, a in zip(free, add):
+            w[i] += a
+    return w / w.sum() if w.sum() > 0 else w
+
+
 def target_weights(sel, sd, Zwin, cap):
-    """Inverse-vol weights, 20% cap, scaled to the vol target; gross <= cap."""
+    """Basket weights (inverse-vol by default; ERC or HRP via P['alloc']), 20% cap, scaled to the
+    vol target; gross <= cap."""
     if len(sel) == 0:
         return np.array([]), float("nan"), 0.0
-    w = (1 / sd) / (1 / sd).sum()
-    w = cap_weights(w, P["max_w"])
     R = pd.DataFrame(Zwin).corr(min_periods=60).values
     off = R[~np.eye(len(sel), dtype=bool)]
     fill = float(np.nanmean(off)) if np.isfinite(off).any() else 0.3
     R = np.where(np.isfinite(R), R, fill)
     np.fill_diagonal(R, 1.0)
     S = np.outer(sd, sd) * R
+    alloc = P.get("alloc", "invvol")
+    if alloc == "erc":
+        w = erc_weights(S)
+    elif alloc == "hrp":
+        w = hrp_weights(S, R)
+    else:
+        w = (1 / sd) / (1 / sd).sum()
+    w = cap_weights(w, P["max_w"])
+    if P.get("cluster_cap"):
+        w = cap_clusters(w, [UNIVERSE[j] for j in sel], P["cluster_cap"], P["max_w"])
+        w = cap_weights(w, P["max_w"])
     pv = math.sqrt(max(float(w @ S @ w), 1e-12))
     k = min(cap / w.sum(), (P["vol_target"] / math.sqrt(P["dpy"])) / pv)
     return w * k, pv * math.sqrt(P["dpy"]), k
@@ -644,8 +755,10 @@ def main() -> None:
     ap.add_argument("--v2", action="store_true", help="trial-2 rules: keep while in top 16, resize only if >50% off target")
     ap.add_argument("--broker", choices=sorted(FEES), help="fee profile (default ipot)")
     ap.add_argument("--holdings", help="comma-separated symbols currently held (v2 retention in the live snapshot)")
+    ap.add_argument("--alloc", choices=["invvol", "erc", "hrp"], help="basket weighting (default invvol)")
+    ap.add_argument("--cluster-cap", type=float, help="max share of the basket in one economic cluster, e.g. 0.4")
     a = ap.parse_args()
-    configure(a.v2, a.broker)
+    configure(a.v2, a.broker, a.alloc, a.cluster_cap)
     raw = pd.read_pickle(a.cache) if a.cache else download()
     run(raw, a.backtest, Path(a.out), [x.strip().upper() for x in (a.holdings or "").split(",") if x.strip()])
 
