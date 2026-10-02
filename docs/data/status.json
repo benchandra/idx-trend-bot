@@ -1,6 +1,6 @@
 {
- "last_eod_utc": "2026-10-02 16:21",
- "eod_asof": "2026-10-02",
+ "last_eod_utc": "2026-10-02 17:40",
+ "eod_asof": "2026-10-01",
  "sentiment_method": "keywords",
  "approval_mode": "manual",
  "risk_gate": "ACTIVE",
