@@ -1,10 +1,10 @@
 {
- "last_eod_utc": "2026-10-15 16:36",
- "eod_asof": "2026-10-15",
+ "last_eod_utc": "2026-10-16 14:59",
+ "eod_asof": "2026-10-16",
  "sentiment_method": "keywords",
  "approval_mode": "manual",
- "risk_gate": "ACTIVE",
+ "risk_gate": "HALTED",
  "rules": "v2",
  "committee": "off",
- "decisions_logged": 0
+ "decisions_logged": 5
 }
