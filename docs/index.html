@@ -123,6 +123,10 @@ summary { cursor: pointer; font-weight: 600; }
 .chip { font-size: 12.5px; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--ink2); }
 .chip.pos { color: var(--up); border-color: currentColor; }
 .chip.neg { color: var(--down); border-color: currentColor; }
+.pbar { display: inline-block; width: 64px; height: 8px; vertical-align: middle; background: var(--line); border-radius: 2px; overflow: hidden; margin-right: 6px; }
+.pbar i { display: block; height: 100%; background: var(--up); }
+.pbar.neg i { background: var(--down); }
+.chart .s4 { stroke: var(--ink3); stroke-dasharray: 2 4; }
 .alerts { padding-left: 20px; }
 .alerts li { margin: 4px 0; }
 ol.steps { padding-left: 22px; }
@@ -133,8 +137,6 @@ ol.steps li { margin: 6px 0; max-width: 64ch; }
   .slip:nth-child(2) { animation-delay: 60ms; } .slip:nth-child(3) { animation-delay: 120ms; }
   @keyframes slipin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 }
-tr.dim td{opacity:.55}
-a.btn{display:inline-block;padding:4px 10px;border:1px solid currentColor;border-radius:6px;text-decoration:none;font-weight:600;margin:2px 0}
 </style>
 </head>
 <body>
@@ -145,18 +147,16 @@ a.btn{display:inline-block;padding:4px 10px;border:1px solid currentColor;border
   </header>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" data-tab="today" aria-selected="true">Today</button>
-    <button role="tab" data-tab="proposals" aria-selected="false">Proposals</button>
     <button role="tab" data-tab="news" aria-selected="false">News</button>
+    <button role="tab" data-tab="kronos" aria-selected="false">Kronos</button>
     <button role="tab" data-tab="backtest" aria-selected="false">Backtest</button>
     <button role="tab" data-tab="rules" aria-selected="false">Rulebook</button>
-    <button role="tab" data-tab="audit" aria-selected="false">Audit</button>
     <button role="tab" data-tab="about" aria-selected="false">About</button>
   </nav>
   <main>
     <section id="today"><div id="todayBody"><p class="loading">Loading…</p></div></section>
-    <section id="proposals" hidden><div id="propBody"><p class="loading">Loading…</p></div></section>
     <section id="news" hidden><div id="newsBody"><p class="loading">Loading…</p></div></section>
-    <section id="audit" hidden><div id="auditBody"><p class="loading">Loading…</p></div></section>
+    <section id="kronos" hidden><div id="kronosBody"><p class="loading">Loading…</p></div></section>
     <section id="backtest" hidden><div id="btBody"><p class="loading">Loading…</p></div></section>
     <section id="rules" hidden>
       <p class="muted" style="margin-top:18px">Each level goes one step deeper. Stop reading wherever it stops being useful.</p>
@@ -181,11 +181,13 @@ a.btn{display:inline-block;padding:4px 10px;border:1px solid currentColor;border
         <ul>
           <li><b>Universe:</b> 30 of the most liquid IDX large caps (listed under About).</li>
           <li><b>Entry filter:</b> price above its 200-day average and a positive 6-month return, at least a year listed, and a 60-day median trading value of Rp10 billion or more.</li>
-          <li><b>Ranking:</b> 6-month return divided by forecast annual volatility. Hold the top 8.</li>
+          <li><b>Ranking:</b> 6-month return divided by forecast annual volatility. New positions come from the top 8; a holding is kept while it stays inside the top 16 and in an uptrend (v2, October 2026).</li>
           <li><b>Position size:</b> proportional to 1/volatility, at most 20% per stock, scaled to about 15% expected annual volatility, never more than 100% invested.</li>
-          <li><b>Market brake:</b> if the IHSG closes below its 200-day average, at most 50% invested.</li>
+          <li><b>Market brake:</b> if the equal-weighted basket of the 30 stocks closes below its 200-day average, at most 50% invested (v2 uses the basket instead of the IHSG, whose composition changes in October 2026).</li>
           <li><b>Rebalance:</b> weekly, after the last session of each week. Stops are checked every day.</li>
-          <li><b>No-trade band:</b> skip resizing when the change is under 2% of the account.</li>
+          <li><b>No-trade band:</b> skip resizing unless a position is off its target by more than half of the target (and at least 2% of the account).</li>
+          <li><b>Stress gauge (v3):</b> a composite of seven stress readings, each turned into a z-score over the past year: basket realised volatility, the IHSG GARCH forecast, emerging-market implied volatility (Cboe VXEEM), the big banks lagging the basket (a foreign-flow proxy), the share of stocks down more than 3% or locked at a limit, USD/IDR volatility, and a Williams VIX Fix on the basket. Below 0.5 is normal (up to 100% invested, 15% volatility target); 0.5 to 1.5 is elevated (at most 70%, 10% target, no new positions); above 1.5 is risk-off (at most 30%). Around MSCI announcement dates the cap is 50%. The trend brake still applies on top.</li>
+          <li><b>Censored days:</b> while IDX's lower price limit is 10% or tighter (7% from 19 October to 31 December 2026), daily moves are cut short; the volatility used for sizing and stops is floored at the 2-day realised volatility.</li>
           <li><b>Exit:</b> sell if the price closes below its 200-day average, or falls more than 2.5 × a normal week's move from its peak since it was bought.</li>
           <li><b>Orders:</b> whole lots of 100 shares; limit prices on valid IDX ticks inside the day's price limits (ARA/ARB); buys up to +1% from the close, sells down to −2%; never chase a stock locked at its upper limit.</li>
           <li><b>Costs assumed:</b> 0.19% on buys, 0.29% on sells (includes the 0.1% sales tax), plus 0.1% slippage each way.</li>
@@ -259,12 +261,7 @@ async function getJSON(name) {
   try { const r = await fetch("data/" + name + "?t=" + Date.now(), { cache: "no-store" }); return r.ok ? await r.json() : null; }
   catch (e) { return null; }
 }
-let latest = null, backtest = null, pf = null, newsData = null, intra = null, status = null, props = null, decisions = null, riskState = null;
-async function getLines(name) {
-  try { const r = await fetch("data/" + name + "?t=" + Date.now(), { cache: "no-store" }); if (!r.ok) return null;
-    return (await r.text()).split("\n").filter(Boolean).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean); }
-  catch (e) { return null; }
-}
+let latest = null, backtest = null, pf = null, newsData = null, intra = null, status = null, kronos = null, kronosEval = null, live = null;
 
 function lineChart(host, dates, series, opts) {
   const W = Math.max(300, Math.round(host.clientWidth || 700)), H = opts.h || 230;
@@ -308,6 +305,8 @@ function renderToday() {
     "Open your repository on GitHub, go to Actions, and check the latest End of day run.")));
   const hero = el("div", { class: "next" }, el("div", { class: "label", text: "Orders for the next session" }), el("div", { class: "when", text: fmtDay(latest.next_session) }));
   box.append(hero);
+  box.append(el("div", { id: "liveBox" }));
+  renderLive();
   if (backtest && backtest.stats.strategy.cagr < backtest.stats.ihsg.cagr) box.append(el("div", { class: "notice" }, el("p", null, el("b", { text: "Paper money only. " }),
     "In the 2016–2026 test this version made " + pct(backtest.stats.strategy.cagr) + " a year after costs, less than the IHSG's " + pct(backtest.stats.ihsg.cagr) + ". See Backtest.")));
   hero.append(el("div", { class: "sub", text: latest.rebalance_today ? "Rebalance day: new targets were set at the " + fmtDay(latest.asof) + " close."
@@ -353,7 +352,7 @@ function renderToday() {
     const held = Object.entries(pf.positions || {});
     if (held.length) box.append(table(["Stock", "Lots", "Avg cost", "Last close", "Value", "Gain", "Stop"], held.map(([sym, p]) => {
       const avg = p.cost / p.shares, g = p.last / avg - 1;
-      return { cells: [sym + (p.managed === false ? " (held, not managed)" : ""), NUM.format(p.shares / 100), NUM.format(Math.round(avg)), NUM.format(p.last), idr(p.shares * p.last), { t: signedPct(g), cls: g >= 0 ? "pos" : "neg" }, p.stop_price ? NUM.format(Math.round(p.stop_price)) : "–"] };
+      return { cells: [sym, NUM.format(p.shares / 100), NUM.format(Math.round(avg)), NUM.format(p.last), idr(p.shares * p.last), { t: signedPct(g), cls: g >= 0 ? "pos" : "neg" }, p.stop_price ? NUM.format(Math.round(p.stop_price)) : "–"] };
     }), [1, 2, 3, 4, 5, 6]));
     else box.append(el("p", { class: "muted", text: "Holding cash for now. The first positions are opened at a weekly rebalance when stocks pass the filter." }));
     const tr = (pf.trades || []).slice(-8).reverse();
@@ -368,9 +367,26 @@ function renderToday() {
   box.append(el("div", { class: "mood" },
     el("div", null, el("div", { class: "k", text: "IHSG close" }), el("div", { class: "v", text: NUM.format(Math.round(g.ihsg_close)) + " (" + signedPct(g.ihsg_change) + ")" })),
     el("div", null, el("div", { class: "k", text: "200-day average" }), el("div", { class: "v", text: NUM.format(Math.round(g.ihsg_sma200)) })),
-    el("div", null, el("div", { class: "k", text: "Market brake" }), el("div", { class: "v", text: g.above ? "Off: up to 100%" : "On: at most 50%" })),
+    el("div", null, el("div", { class: "k", text: "Market brake (bot basket vs 200-day)" }), el("div", { class: "v", text: g.above ? "Off: up to 100%" : "On: at most 50%" }),
+      g.ihsg_above != null ? el("div", { class: "small muted", text: "IHSG itself is " + (g.ihsg_above ? "above" : "below") + " its 200-day average" + (latest.rules && latest.rules.censored_regime ? "; lower limit " + Math.round(latest.rules.arb_pct * 100) + "%, volatility floored" : "") }) : null),
     el("div", null, el("div", { class: "k", text: "IHSG forecast volatility" }), el("div", { class: "v", text: pct(g.ihsg_vol_ann) + " a year" }),
       el("div", { class: "small muted", text: "Higher than " + Math.round(g.ihsg_vol_pctile_5y * 100) + "% of the last 5 years" }))));
+  const sv = latest.svi;
+  if (sv && sv.value != null) {
+    const tone = sv.tier === 0 ? "pos" : "neg";
+    box.append(el("h2", { text: "Stress gauge (IDX-SVI)" }));
+    box.append(el("div", { class: "mood" },
+      el("div", null, el("div", { class: "k", text: "Reading" }), el("div", { class: "v " + tone, text: sv.value.toFixed(2) + " · " + sv.label })),
+      el("div", null, el("div", { class: "k", text: "Invested at most" }), el("div", { class: "v", text: pct(g.cap, 0) + (sv.event_window ? " (MSCI event window)" : "") })),
+      el("div", null, el("div", { class: "k", text: "Applied to orders" }), el("div", { class: "v", text: sv.applied ? "Yes: volatility target " + pct(sv.vol_target, 0) + " (v3 rules)" : "No, shown only (v2 rules)" }))));
+    const sc = el("div", { class: "chart" });
+    box.append(sc);
+    const h = sv.history, drawSvi = () => lineChart(sc, h.dates, [{ values: h.values.map(() => sv.thresholds[0]), cls: "s3" }, { values: h.values.map(() => sv.thresholds[1]), cls: "s3" }, { values: h.values, cls: "s1" }], { label: "Stress gauge, last 300 sessions", fmt: v => v.toFixed(1), xDays: true, h: 170 });
+    redraws.push(drawSvi); requestAnimationFrame(drawSvi);
+    box.append(el("details", null, el("summary", { text: "What is driving it" }),
+      table(["Reading", "Value", "z-score", "Weight"], sv.components.map(c => ({ cells: [c.label, c.value == null ? "–" : (c.name === "vxeem" ? c.value.toFixed(1) : c.name === "wvf" ? c.value.toFixed(1) + "%" : pct(c.value, 1)), { t: c.z == null ? "–" : (c.z > 0 ? "+" : "") + c.z.toFixed(2), cls: c.z != null && c.z >= 1.5 ? "neg" : "" }, pct(c.weight, 0)] })), [1, 2, 3]),
+      el("p", { class: "small muted", text: "z-scores are relative to the past year: 0 is average, +3 is as stressed as the gauge allows. Thresholds 0.5 and 1.5 were fixed before testing and are not tuned." })));
+  }
   const pfv = latest.portfolio;
   box.append(el("h2", { text: "Target portfolio" }));
   box.append(el("p", { class: "muted small", text: pfv.n_uptrend + " of 30 stocks pass the trend filter. Targets: " + pfv.n_selected + " stocks, " + pct(pfv.gross, 0) + " invested." }));
@@ -444,11 +460,18 @@ function renderBacktest() {
     lineChart(c1, b.dates, [{ values: b.ew, cls: "s2" }, { values: b.ihsg, cls: "s3" }, { values: b.strategy, cls: "s1" }], { label: "Growth of Rp100", fmt: v => NUM.format(Math.round(v)) });
     lineChart(c2, b.dates, [{ values: drawdown(b.ihsg), cls: "s3" }, { values: drawdown(b.strategy), cls: "s1", area: true }], { label: "Drawdowns", fmt: v => pct(v, 0), floorZero: true, h: 170 });
   };
-  renderBacktest.draw = draw;
-  if (!$("#backtest").hidden) requestAnimationFrame(draw);
+  let c3 = null;
+  if (b.svi) { box.append(el("h2", { text: "Stress gauge over the test" })); c3 = el("div", { class: "chart" }); box.append(c3,
+    el("p", { class: "small muted", text: "Days by tier: " + Object.entries(b.svi_tier_days || {}).map(([k, v]) => k + " " + v).join(", ") + (b.event_days != null ? "; MSCI event-window days " + b.event_days : "") + "." })); }
+  const draw0 = draw;
+  const draw2 = () => { draw0(); if (c3) lineChart(c3, b.dates, [{ values: b.svi.map(() => 0.5), cls: "s3" }, { values: b.svi.map(() => 1.5), cls: "s3" }, { values: b.svi, cls: "s1" }], { label: "Stress gauge", fmt: v => v.toFixed(1), h: 150 }); };
+  renderBacktest.draw = draw2;
+  if (!$("#backtest").hidden) requestAnimationFrame(draw2);
   box.append(el("h2", { text: "Scorecard" }));
   const row = (k, lab) => ({ cells: [lab, pct(s[k].cagr), pct(s[k].vol), s[k].sharpe.toFixed(2), pct(s[k].max_dd, 0), pct(s[k].psr, 0)] });
   box.append(table(["", "Per year", "Volatility", "Sharpe", "Worst fall", "Chance Sharpe > 0"], [row("strategy", "Bot"), row("ihsg", "IHSG"), row("ew", "Same stocks, equal")], [1, 2, 3, 4, 5]));
+  if (b.trials && b.trials.length) box.append(el("p", { class: "small muted", text: "Rule versions tried on this data: " + b.trials.map(t => "v" + t.version + " (Sharpe " + t.sharpe.toFixed(2) + ")").join(", ") +
+    (b.dsr != null ? ". Chance the best one beats zero after allowing for " + b.trials.length + " tries (deflated Sharpe): " + pct(b.dsr, 0) + "." : ".") }));
   box.append(el("h2", { text: "Why it traded" }));
   box.append(table(["Reason", "Trades a year", "Turnover a year"], reasons.map(([k, v]) => ({ cells: [k.charAt(0).toUpperCase() + k.slice(1), Math.round(v.trades_pa).toString(), v.turnover_pa.toFixed(1) + "×"] })), [1, 2]));
   box.append(el("h2", { text: "Year by year" }));
@@ -459,14 +482,89 @@ function renderBacktest() {
   box.append(el("p", { text: "Over " + NUM.format(v.days) + " trading days, the model's forecast of the IHSG's worst 1% of days was breached " + v.exceedances + " times against " + v.expected + " expected (Kupiec p-value " + v.p_value.toFixed(2) + (v.p_value > 0.05 ? "): no sign that it misstates risk." : "): its risk forecasts look off.") }));
 }
 
+// ------------------------------------------------------------------ Live (near-live quotes pushed by bot/live.py or the intraday job)
+async function loadLive() { live = await getJSON("live.json"); renderLive(); }
+function renderLive() {
+  const host = $("#liveBox"); if (!host) return; host.replaceChildren();
+  if (!live || !live.quotes) return;
+  const now = wibNow(), ageMin = live.updated_utc ? Math.round((Date.now() - Date.parse(live.updated_utc + "Z")) / 60000) : null;
+  const barDate = live.ihsg && live.ihsg.bar_date ? live.ihsg.bar_date : live.date;
+  const stale = barDate !== now.slice(0, 10) || (ageMin != null && ageMin > 20);
+  const card = el("div", { class: "mood" });
+  if (live.ihsg) card.append(el("div", null, el("div", { class: "k", text: "IHSG live" }), el("div", { class: "v " + (live.ihsg.chg >= 0 ? "pos" : "neg"), text: NUM.format(Math.round(live.ihsg.last)) + " (" + signedPct(live.ihsg.chg, 2) + ")" })));
+  card.append(el("div", null, el("div", { class: "k", text: stale ? "Last update (market closed or feed stale)" : "Last update" }), el("div", { class: "v", text: (live.time || "–") + " WIB" + (ageMin != null ? ", " + ageMin + " min ago" : "") }),
+    stale ? el("div", { class: "small muted", text: "Prices shown are from the " + fmtDay(barDate) + " session." }) : null));
+  if (live.equity_est) card.append(el("div", null, el("div", { class: "k", text: "Model account, live estimate" }), el("div", { class: "v", text: idr(live.equity_est) })));
+  host.append(el("h2", { text: "Live" }), card);
+  if (live.quotes.length) host.append(table(["Stock", "Price", "Today", "Stop level", "Lower limit"], live.quotes.map(h => ({ cls: h.held ? "sel" : "",
+    cells: [h.sym + (h.held ? " (held)" : ""), NUM.format(h.last), { t: signedPct(h.chg), cls: h.chg >= 0 ? "pos" : "neg" }, h.stop ? NUM.format(Math.round(h.stop)) : "–", h.arb ? NUM.format(h.arb) : "–"] })), [1, 2, 3, 4]));
+  host.append(el("p", { class: "small muted", text: "Yahoo Finance 5-minute bars, several minutes behind the exchange. Refreshes every minute while this page is open." }));
+}
+setInterval(() => { if (!document.hidden) loadLive(); }, 60 * 1000);
+
+// ------------------------------------------------------------------ Kronos
+function renderKronos() {
+  const box = $("#kronosBody"); box.replaceChildren();
+  if (!kronos) { box.append(el("p", { class: "muted", text: "No Kronos run yet. It runs inside the End of day job once the Kronos files are in the repository." })); return; }
+  if (!kronos.ok) { box.append(el("div", { class: "notice" }, el("p", null, el("b", { text: "Kronos did not run. " }), kronos.reason || "Unknown reason."))); return; }
+  const ih = kronos.names.find(r => r.sym === "IHSG");
+  box.append(el("div", { class: "notice" }, el("p", null, el("b", { text: "Advisory only. " }),
+    "Kronos is an open foundation model for candlesticks. From the last " + kronos.lookback + " daily bars it samples " + kronos.paths + " possible paths for the next " + kronos.horizon +
+    " sessions per name. Nothing here places orders; every reading is saved to data/kronos_log.csv so it can be judged later.")));
+  if (ih) {
+    box.append(el("h2", { text: "IHSG, next " + kronos.horizon + " sessions" }));
+    box.append(el("div", { class: "mood" },
+      el("div", null, el("div", { class: "k", text: "Paths that end higher" }), el("div", { class: "v " + (ih.p_up5 >= 0.5 ? "pos" : "neg"), text: pct(ih.p_up5, 0) })),
+      el("div", null, el("div", { class: "k", text: "Median move" }), el("div", { class: "v " + (ih.ret5_med >= 0 ? "pos" : "neg"), text: signedPct(ih.ret5_med) })),
+      el("div", null, el("div", { class: "k", text: "Model's range" }), el("div", { class: "v", text: signedPct(ih.ret5_p10) + " to " + signedPct(ih.ret5_p90) })),
+      el("div", null, el("div", { class: "k", text: "Daily risk, Kronos vs GARCH" }), el("div", { class: "v", text: pct(ih.kvol_d, 1) + (ih.garch_sigd ? " vs " + pct(ih.garch_sigd, 1) : "") }))));
+    if (kronos.ihsg_hist) {
+      const h = kronos.ihsg_hist, nH = h.dates.length, dates = h.dates.concat(kronos.future_dates), nF = kronos.future_dates.length;
+      const pad = k => h.closes.slice(0, nH - 1).map(() => null).concat([h.closes[nH - 1]], ih[k].slice(0, nF));
+      const c = el("div", { class: "chart" });
+      box.append(c, legend([["Closes", "var(--ink3)"], ["Kronos median path", "var(--soga)"], ["10th to 90th percentile", "var(--ink2)"]]));
+      const draw = () => lineChart(c, dates, [{ values: h.closes.concat(kronos.future_dates.map(() => null)), cls: "s3" }, { values: pad("p10_path"), cls: "s2" }, { values: pad("p90_path"), cls: "s2" }, { values: pad("median_path"), cls: "s1" }],
+        { label: "IHSG with Kronos paths", fmt: v => NUM.format(Math.round(v)), xDays: true });
+      renderKronos.draw = draw;
+      if (!$("#kronos").hidden) requestAnimationFrame(draw);
+    }
+  }
+  const rows = kronos.names.filter(r => r.sym !== "IHSG");
+  if (rows.length) {
+    box.append(el("h2", { text: "Stocks the bot watches" }));
+    const vol = r => r.vol_flag === "wider" ? { t: "more than GARCH (" + (r.vol_ratio || 0).toFixed(1) + "×)", cls: "neg" } : r.vol_flag === "tighter" ? { t: "less than GARCH (" + (r.vol_ratio || 0).toFixed(1) + "×)", cls: "muted" } : r.vol_flag === "agrees" ? "matches GARCH" : "–";
+    box.append(table(["Stock", "Close", "Paths up", "Median 5-day", "Model's range", "Risk view", "Bot"], rows.map(r => ({ cls: r.held || r.selected ? "sel" : "",
+      cells: [r.sym + (r.held ? " (held)" : r.selected ? " (target)" : ""), NUM.format(Math.round(r.close)),
+        { node: el("span", null, el("span", { class: "pbar" + (r.p_up5 < 0.5 ? " neg" : "") }, el("i", { style: "width:" + Math.round(r.p_up5 * 100) + "%" })), pct(r.p_up5, 0)) },
+        { t: signedPct(r.ret5_med), cls: r.ret5_med >= 0 ? "pos" : "neg" }, signedPct(r.ret5_p10) + " to " + signedPct(r.ret5_p90), vol(r), r.bot_status || "–"] })), [1, 3]));
+    box.append(el("p", { class: "small muted", text: "Paths up: share of the " + kronos.paths + " sampled paths that end above today's close. Risk view compares the spread of the model's next-day samples with the engine's GARCH forecast." }));
+  }
+  box.append(el("h2", { text: "How good has it been?" }));
+  if (kronosEval && kronosEval.all) {
+    const a = kronosEval.all, n = kronosEval.names || [];
+    box.append(el("p", { text: "Checked on " + a.n + " forecasts for " + n.join(", ") + " over the last " + kronosEval.days + " sessions (" + fmtDay(kronosEval.window[0], true) + " to " + fmtDay(kronosEval.window[1], true) + "), each made only with data available at the time." }));
+    box.append(table(["Measure", "Kronos", "Baseline"], [
+      { cells: ["5-day direction right", pct(a.hit_rate_5d, 0), pct(a.always_up_5d, 0) + " if you always said up"] },
+      { cells: ["5-day direction right when confident", a.hit_rate_5d_confident == null ? "–" : pct(a.hit_rate_5d_confident, 0) + " (" + a.n_confident + " calls)", "–"] },
+      { cells: ["1-day direction right", pct(a.hit_rate_1d, 0), "50% coin flip"] },
+      { cells: ["Probability score (lower is better)", a.brier_5d.toFixed(3), "0.250 coin flip"] },
+      { cells: ["Actual result inside the model's range", pct(a.band_coverage_5d, 0), "80% if the range is honest"] },
+      { cells: ["Rank correlation, forecast vs actual 5-day", a.corr_ret5 == null ? "–" : a.corr_ret5.toFixed(2), "0 means no information"] },
+      { cells: ["Risk ranking: Kronos spread vs next-day move", a.vol_corr_kronos == null ? "–" : a.vol_corr_kronos.toFixed(2), (a.vol_corr_ewma == null ? "–" : a.vol_corr_ewma.toFixed(2)) + " for the simple EWMA volatility"] }
+    ], [1, 2]));
+  } else {
+    box.append(el("p", { class: "muted", text: "No check yet. Run the Kronos check workflow (Actions) or python -m bot.kronos_signal --eval 30 to score recent forecasts." }));
+  }
+  box.append(el("p", { class: "small muted", text: "Kronos was trained on market data up to 2024/25, so only forecasts made after that and judged on later prices mean anything. A few dozen checks is not proof either way; the log needs months." }));
+}
+
 // ------------------------------------------------------------------ About
 function renderAbout() {
   const box = $("#aboutBody"); box.replaceChildren();
   box.append(el("h2", { text: "What runs when (Jakarta time, weekdays)" }));
   box.append(table(["When", "What happens"], [
     { cells: ["09:00–15:30, every 30 min", { t: "Prices and news for the bot's stocks. A Telegram message only if a stop level, a price limit, a sharp IHSG fall or strong news needs attention.", cls: "wrapcell" }] },
-    { cells: ["17:30 (retry 19:00)", { t: "Fills the model account's orders at the day's prices, reruns the model, builds the next session's proposals, runs the checks and the committee, sends a summary (with Approve / Halve / Reject buttons when your tap is needed).", cls: "wrapcell" }] },
-    { cells: ["08:30", { t: "Collects your taps, applies the approval mode's default to the rest, and sends the final order list.", cls: "wrapcell" }] },
+    { cells: ["17:30 (retry 19:00)", { t: "Fills the model account's orders at the day's prices, reruns the model, sets the next orders, scores the news, sends a summary.", cls: "wrapcell" }] },
     { cells: ["1st of each month", { t: "Reruns the 10-year backtest.", cls: "wrapcell" }] }
   ]));
   box.append(el("p", { class: "small muted", text: "GitHub's timers can start several minutes late, and Yahoo prices can lag the exchange. This is monitoring, not split-second trading." }));
@@ -477,8 +575,6 @@ function renderAbout() {
     { cells: ["End of day", utc(st.last_eod_utc) + (st.eod_asof ? " (prices to " + st.eod_asof + ")" : "")] },
     { cells: ["Intraday check", utc(st.last_intraday_utc)] },
     { cells: ["Backtest", utc(st.last_backtest_utc)] },
-    { cells: ["Pre-open (approvals)", utc(st.last_preopen_utc)] },
-    { cells: ["Approval mode / rules", (st.approval_mode || "auto") + " / " + (st.rules || "v2") + " · risk gate " + (st.risk_gate || "ACTIVE") + " · committee " + (st.committee || "off")] },
     { cells: ["News scoring", st.sentiment_method === "claude" ? "Claude" : "Keywords"] },
     { cells: ["Engine", "Version " + latest.version] }
   ]));
@@ -493,88 +589,31 @@ function renderAbout() {
   box.append(ul);
 }
 
-// ------------------------------------------------------------------ Proposals
-function statusText(p) {
-  const m = { approved: "approved", awaiting: "waiting for your tap", blocked: "blocked", rejected: "rejected", vetoed: "vetoed by committee", pending: "pending" };
-  return m[p.status] || p.status;
-}
-function repoUrl() {
-  const h = location.hostname, m = h.match(/^([^.]+)\.github\.io$/i);
-  const seg = location.pathname.split("/").filter(Boolean)[0];
-  return m && seg ? "https://github.com/" + m[1] + "/" + seg : null;
-}
-function approveLink(action, p) {
-  const base = repoUrl();
-  if (!base) return null;
-  const title = action + ":" + p.id;
-  const body = "Just press Submit new issue. The bot records this " + action + " within a minute and closes the issue.";
-  return base + "/issues/new?title=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(body);
-}
-function actionCell(p) {
-  if (p.status !== "awaiting") return "";
-  const wrap = el("span", null);
-  [["approve", "Approve"], ["halve", "Halve"], ["reject", "Reject"]].forEach(([a, label]) => {
-    const u = approveLink(a, p);
-    wrap.append(u ? el("a", { href: u, target: "_blank", rel: "noopener", class: "btn", text: label }) : el("span", { class: "muted", text: label }));
-    wrap.append(" ");
-  });
-  return { node: wrap };
-}
-function renderProposals() {
-  const box = $("#propBody"); box.replaceChildren();
-  const rs = riskState || {};
-  box.append(el("h2", { text: "Risk gate: " + (rs.state || "ACTIVE") }));
-  if (rs.reason) box.append(el("p", { class: "muted small", text: rs.reason + (rs.since ? " (since " + rs.since + " UTC)" : "") }));
-  box.append(el("p", { class: "small muted", text: "Every order starts as a proposal. Deterministic checks (IDX rules, cash, risk limits) can block it; the LLM committee can only agree, halve or veto a buy; then you (or the policy) approve. Send /halt in Telegram to stop everything, /resume to continue." }));
-  if (!props || !props.items || !props.items.length) { box.append(el("p", { class: "muted", text: "No proposals yet. They appear after the end-of-day run." })); return; }
-  box.append(el("h2", { text: "Proposals for " + fmtDay(props.session, true) + " · mode " + (props.mode || "?") }));
-  if (props.shadow && props.shadow.equity) box.append(el("p", { class: "small muted", text: "Shadow account (every proposal taken, pure strategy): Rp" + Math.round(props.shadow.equity).toLocaleString("en-US") + ", " + Math.round((props.shadow.invested || 0) * 100) + "% invested." }));
-  if (props.mode === "manual" && props.items.some(p => p.status === "awaiting")) box.append(el("p", { class: "small", text: "Tap Approve, Halve or Reject: a pre-filled GitHub page opens; press Submit new issue. The decision is applied at the next pre-open (08:30 WIB), or within 5 minutes on the always-on box. Telegram buttons work too." }));
-  box.append(table(["Side", "Stock", "Lots", "Limit", "Why", "Checks", "Committee", "Status", "Your call"], props.items.map(p => {
-    const r = p.checks && p.checks.risk ? p.checks.risk : {};
-    const checks = p.blocked && p.blocked.length ? "BLOCKED: " + p.blocked.join("; ") : "rules OK · risk " + (r.verdict || "?") + (r.limit ? " (" + r.limit + ")" : "");
-    const c = p.committee || {};
-    const com = c.verdict === "unavailable" ? "not run" : c.verdict === "invalid" ? "invalid (ignored)" : (c.verdict || "") + (c.reason ? ": " + c.reason : "");
-    return { cls: p.status === "blocked" || p.status === "rejected" || p.status === "vetoed" ? "dim" : null, cells: [p.side.toUpperCase(), p.sym, String((p.final_shares || p.shares) / 100), "Rp" + Math.round(p.limit).toLocaleString("en-US"), { t: p.why, cls: "wrapcell" }, { t: checks, cls: "wrapcell" }, { t: com, cls: "wrapcell" }, statusText(p) + (p.approval && p.approval.note ? " (" + p.approval.note + ")" : ""), actionCell(p)] };
-  }), [2, 3]));
-  if (props.data && !props.data.ok) box.append(el("p", { class: "small", text: "Data check failed: " + props.data.notes.join("; ") + ". No new buys." }));
-}
-function renderAudit() {
-  const box = $("#auditBody"); box.replaceChildren();
-  box.append(el("h2", { text: "Decision record" }));
-  box.append(el("p", { class: "small muted", text: "One line per decided proposal: what the model proposed, what the checks and the committee said, who approved it and how. This is the audit trail (data/decisions.jsonl)." }));
-  if (!decisions || !decisions.length) { box.append(el("p", { class: "muted", text: "Nothing decided yet." })); return; }
-  const rows = decisions.slice(-200).reverse().map(d => ({ cells: [d.session, d.side.toUpperCase() + " " + d.sym, String((d.final_shares || 0) / 100) + "/" + String(d.shares / 100), "Rp" + Math.round(d.limit).toLocaleString("en-US"), statusText(d), (d.approval ? (d.approval.by || "") + (d.approval.note ? ": " + d.approval.note : "") : ""), (d.committee && d.committee.verdict && d.committee.verdict !== "unavailable") ? d.committee.verdict : "", d.logged_utc || ""] }));
-  box.append(table(["Session", "Order", "Lots (final/proposed)", "Limit", "Status", "Decided by", "Committee", "Logged (UTC)"], rows, [2, 3]));
-}
-
 // ------------------------------------------------------------------ shell
 const tabs = document.querySelectorAll("nav.tabs button");
 function show(id) {
   tabs.forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === id)));
   document.querySelectorAll("main > section").forEach(s => { s.hidden = s.id !== id; });
   if (id === "backtest" && renderBacktest.draw) requestAnimationFrame(renderBacktest.draw);
+  if (id === "kronos" && renderKronos.draw) requestAnimationFrame(renderKronos.draw);
   if (id === "today") redraws.forEach(f => requestAnimationFrame(f));
-  if (id === "proposals") renderProposals();
-  if (id === "audit") renderAudit();
   try { history.replaceState(null, "", "#" + id); } catch (e) { /* ignore */ }
 }
 tabs.forEach(b => b.addEventListener("click", () => show(b.dataset.tab)));
 const first = (location.hash || "").slice(1);
-if (["today", "proposals", "news", "backtest", "audit", "rules", "about"].includes(first)) show(first);
+if (["today", "news", "kronos", "backtest", "rules", "about"].includes(first)) show(first);
 let rt = null;
-window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { redraws.forEach(f => f()); if (renderBacktest.draw && !$("#backtest").hidden) renderBacktest.draw(); }, 150); });
+window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { redraws.forEach(f => f()); if (renderBacktest.draw && !$("#backtest").hidden) renderBacktest.draw(); if (renderKronos.draw && !$("#kronos").hidden) renderKronos.draw(); }, 150); });
 
 async function load() {
-  const got = await Promise.all(["latest.json", "backtest.json", "portfolio.json", "news.json", "intraday.json", "status.json", "proposals.json", "risk_state.json"].map(getJSON));
-  [latest, backtest, pf, newsData, intra, status, props, riskState] = got;
-  decisions = await getLines("decisions.jsonl");
+  const got = await Promise.all(["latest.json", "backtest.json", "portfolio.json", "news.json", "intraday.json", "status.json", "kronos.json", "kronos_eval.json", "live.json"].map(getJSON));
+  [latest, backtest, pf, newsData, intra, status, kronos, kronosEval, live] = got;
   if (!latest) {
     const msg = "No data yet. It appears after the first End of day run (see the setup guide).";
-    $("#asof").textContent = msg; ["#todayBody", "#newsBody", "#btBody", "#aboutBody"].forEach(s => $(s).replaceChildren(el("p", { class: "muted", text: msg }))); return;
+    $("#asof").textContent = msg; ["#todayBody", "#newsBody", "#kronosBody", "#btBody", "#aboutBody"].forEach(s => $(s).replaceChildren(el("p", { class: "muted", text: msg }))); return;
   }
   $("#asof").textContent = "Prices up to the " + fmtDay(latest.asof, true) + " close" + (intra && intra.date === wibNow().slice(0, 10) ? ", checked at " + intra.time + " WIB" : "");
-  renderToday(); renderNews(); renderBacktest(); renderAbout(); renderProposals(); renderAudit();
+  renderToday(); renderNews(); renderKronos(); renderBacktest(); renderAbout();
 }
 load();
 setInterval(() => { if (!document.hidden) load(); }, 5 * 60 * 1000);
