@@ -39,6 +39,10 @@ UNIVERSE = (
 ).split()
 INDEX = "^JKSE"
 FX = "IDR=X"  # USD/IDR on Yahoo Finance
+FIXED30 = None            # filled below: the hand-picked 30 (hindsight universe, production)
+UNIVERSE_MODE = "fixed30" # or "lq45": point-in-time LQ45 membership from docs/data/lq45_history.csv
+LQ45_HISTORY = Path(__file__).resolve().parent.parent / "docs" / "data" / "lq45_history.csv"
+MEMBERSHIP: list[tuple] = []  # [(start, end, set(tickers))] when UNIVERSE_MODE == "lq45"
 # Names to keep out of the universe even if they pass the filters: BEI's HSC (high shareholding concentration) list,
 # UMA notices and special-notation stocks. Maintained by hand; none of the 30 are on the October 2026 HSC list.
 EXCLUDE: set[str] = set()
@@ -53,6 +57,43 @@ TIER_LABELS = ("normal", "elevated", "risk-off")
 # Event windows: MSCI quarterly index-review announcements (approximate: the 11th of Feb/May/Aug/Nov) plus the
 # Indonesia classification dates known in October 2026. Replace with exact dates when MSCI publishes them.
 EVENTS = [f"{y}-{m}-11" for y in range(2016, 2028) for m in ("02", "05", "08", "11")] + ["2026-11-30", "2027-04-30", "2027-06-30"]
+FIXED30 = list(UNIVERSE)
+
+
+def set_universe(mode: str, raw: pd.DataFrame | None = None) -> None:
+    """fixed30 = the hand-picked list. lq45 = every name that was in LQ45 during the history file, with
+    membership applied date by date in the backtest (no hindsight), restricted to names Yahoo still serves."""
+    global UNIVERSE, UNIVERSE_MODE, MEMBERSHIP
+    UNIVERSE_MODE = mode
+    if mode == "fixed30":
+        UNIVERSE, MEMBERSHIP = list(FIXED30), []
+        return
+    hist = pd.read_csv(LQ45_HISTORY)
+    MEMBERSHIP = [(pd.Timestamp(r.start), pd.Timestamp(r.end), set(r.tickers.split())) for r in hist.itertuples()]
+    names = sorted(set().union(*[m[2] for m in MEMBERSHIP]))
+    if raw is not None:
+        names = [t for t in names if (t + ".JK") in raw["Close"].columns and raw["Close"][t + ".JK"].notna().sum() > 300]
+    UNIVERSE = names
+
+
+def member_mask(cal: pd.DatetimeIndex) -> pd.DataFrame:
+    """True where a name was an LQ45 constituent on that date (latest announcement whose start <= date)."""
+    if not MEMBERSHIP:
+        return pd.DataFrame(True, index=cal, columns=UNIVERSE)
+    starts = np.array([m[0].value for m in MEMBERSHIP])
+    order = np.argsort(starts)
+    out = np.zeros((len(cal), len(UNIVERSE)), bool)
+    col = {t: j for j, t in enumerate(UNIVERSE)}
+    for i, day in enumerate(cal):
+        k = np.searchsorted(starts[order], day.value, side="right") - 1
+        if k < 0:
+            continue
+        for t in MEMBERSHIP[order[k]][2]:
+            if t in col:
+                out[i, col[t]] = True
+    return pd.DataFrame(out, index=cal, columns=UNIVERSE)
+
+
 P = dict(
     n_hold=8, max_w=0.20, vol_target=0.15, sma_len=200, mom_len=126,
     stop_k=2.5, stop_days=5, band=0.02, bear_cap=0.50, dpy=240,
@@ -136,7 +177,8 @@ def ar_pcts(regime: int, ref: float) -> tuple[float, float]:
 def download(start: str = "2014-01-01") -> pd.DataFrame:
     import yfinance as yf
 
-    tickers = [s + ".JK" for s in UNIVERSE] + [INDEX, FX]
+    names = UNIVERSE if UNIVERSE_MODE == "fixed30" else sorted(set(FIXED30) | set().union(*[m[2] for m in MEMBERSHIP]))
+    tickers = [s + ".JK" for s in names] + [INDEX, FX]
     raw = yf.download(tickers, start=start, auto_adjust=False, actions=False,
                       progress=False, threads=True)
     if raw is None or raw.empty:
@@ -475,13 +517,15 @@ def next_session(day: pd.Timestamp) -> pd.Timestamp:
 
 def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | None = None,
         suffix: str = "", trials_path: Path | None = None) -> None:
+    if UNIVERSE_MODE == "lq45":
+        set_universe("lq45", raw)
     d = prepare(raw)
     held_idx = [UNIVERSE.index(h) for h in (held or []) if h in UNIVERSE]
     cal, A, C, trade = d["cal"], d["A"], d["C"], d["trade"]
     n = len(UNIVERSE)
     rpct = {s: 100 * np.log1p(d["ret"][s].where(trade[s])) for s in UNIVERSE}
     ihsg_r = 100 * np.log(d["ihsg"] / d["ihsg"].shift(1))
-    years = list(range(2016, cal[-1].year + 1))
+    years = list(range(int(P["bt_start"][:4]), cal[-1].year + 1))
     workers = max(1, min(8, (os.cpu_count() or 2)))
 
     sma = A.rolling(P["sma_len"], min_periods=P["sma_len"]).mean()
@@ -490,7 +534,8 @@ def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | No
     liq = d["value"].rolling(P["liq_len"], min_periods=20).median()
     ihsg_sma = d["ihsg"].rolling(200, min_periods=200).mean()
     # market brake: the bot's own equal-weight basket (self-contained; IHSG's composition changes in Oct 2026)
-    basket = (1 + d["ret"].where(trade).mean(axis=1).fillna(0)).cumprod()
+    member = member_mask(cal)
+    basket = (1 + d["ret"].where(trade & member).mean(axis=1).fillna(0)).cumprod()
     basket_sma = basket.rolling(200, min_periods=200).mean()
     brake, brake_sma = (basket, basket_sma) if P["brake_src"] == "basket" else (d["ihsg"], ihsg_sma)
     ihsg_cap = np.where(brake > brake_sma, 1.0, P["bear_cap"])
@@ -540,7 +585,7 @@ def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | No
         sd_live = np.where(ok, np.maximum(sd_live, rv2v[i]), sd_live)
     Zl = pd.DataFrame({s: L[s]["z"] for s in UNIVERSE}).reindex(cal)
     elig_live = ((A.iloc[i] > sma.iloc[i]) & (mom.iloc[i] > 0) & (hist.iloc[i] >= P["min_hist"])
-                 & (liq.iloc[i] >= P["liq_min_value"]) & trade.iloc[i]).values & np.isfinite(sd_live) & not_excluded
+                 & (liq.iloc[i] >= P["liq_min_value"]) & trade.iloc[i] & member.iloc[i]).values & np.isfinite(sd_live) & not_excluded
     score_live = np.where(elig_live, mom.iloc[i].values / (sd_live * math.sqrt(P["dpy"])), np.nan)
     cand = [j for j in range(n) if elig_live[j]]
     order = sorted(cand, key=lambda j: -score_live[j])
@@ -579,6 +624,8 @@ def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | No
             status = "Excluded: on the HSC / UMA watch list"
         elif not trade[s].iloc[i]:
             status = "Not traded today (suspended or no data)"
+        elif not bool(member.iloc[i][s]):
+            status = "Not an LQ45 member this period"
         elif not np.isfinite(sd_live[j]):
             status = "Too little history for the model"
         elif hist.iloc[i][s] < P["min_hist"]:
@@ -615,7 +662,7 @@ def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | No
         rebalance_today=bool(rebalance_today), next_rebalance_close=d2.strftime("%Y-%m-%d"),
         params=P, universe=UNIVERSE,
         svi=sv_info,
-        rules=dict(version=VERSION, svi=P["svi"], hysteresis=P["hysteresis"], n_keep=P["n_keep"], resize_frac=P["resize_frac"],
+        rules=dict(version=VERSION, universe=UNIVERSE_MODE, n_names=len(UNIVERSE), svi=P["svi"], hysteresis=P["hysteresis"], n_keep=P["n_keep"], resize_frac=P["resize_frac"],
                    brake_src=P["brake_src"], censored_regime=bool(cens[i]), arb_pct=float(AR_REGIMES[reg_idx[i]][2][1])),
         regime=dict(ihsg_close=d["ihsg"].iloc[i], ihsg_sma200=ihsg_sma.iloc[i],
                     above=bool(brake.iloc[i] > brake_sma.iloc[i]), cap=float(cap_all[i]), trend_cap=float(ihsg_cap[i]),
@@ -650,7 +697,7 @@ def run(raw: pd.DataFrame, do_backtest: bool, outdir: Path, held: list[str] | No
     sig = (np.sqrt(F) / 100).values
     sig = np.where(cens[:, None] & np.isfinite(sig) & np.isfinite(rv2v), np.maximum(sig, rv2v), sig)
     elig = ((A > sma) & (mom > 0) & (hist >= P["min_hist"]) & (liq >= P["liq_min_value"])
-            & trade & F.notna()).values & not_excluded[None, :]
+            & trade & member & F.notna()).values & not_excluded[None, :]
     score = np.where(elig, mom.values / (sig * math.sqrt(P["dpy"])), np.nan)
     Av, AOv, Cv, Ov, Tv, smav = A.values, d["AO"].values, C.values, d["O"].values, trade.values, sma.values
     start_i = int(cal.searchsorted(pd.Timestamp(P["bt_start"])))
@@ -832,10 +879,18 @@ def main() -> None:
                          "v3 = v2 + the stress gauge applied to orders (trial #3: did not beat v2, kept for display only)")
     ap.add_argument("--suffix", default="", help="suffix for the output files, e.g. _v1")
     ap.add_argument("--held", default="", help="comma-separated symbols currently held (for the v2 selection)")
+    ap.add_argument("--universe", choices=["fixed30", "lq45"], default="fixed30",
+                    help="fixed30 = production list; lq45 = point-in-time LQ45 membership (needs docs/data/lq45_history.csv)")
+    ap.add_argument("--start", default=None, help="backtest start date, e.g. 2022-02-01")
+    ap.add_argument("--trials", default=None, help="trials file for the DSR (default <out>/trials.json)")
     a = ap.parse_args()
     configure(a.rules)
+    set_universe(a.universe)
+    if a.start:
+        P["bt_start"] = a.start
     raw = pd.read_pickle(a.cache) if a.cache else download()
-    run(raw, a.backtest, Path(a.out), held=[h for h in a.held.upper().split(",") if h], suffix=a.suffix)
+    run(raw, a.backtest, Path(a.out), held=[h for h in a.held.upper().split(",") if h], suffix=a.suffix,
+        trials_path=Path(a.trials) if a.trials else None)
 
 
 if __name__ == "__main__":
