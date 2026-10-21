@@ -4,3 +4,10 @@ scipy
 pandas
 numpy
 requests
+# Kronos layer (bot/kronos_signal.py). PyTorch is installed separately in the workflows with
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# so that the small CPU build is used, not the 2 GB GPU build.
+einops>=0.8
+huggingface_hub>=0.30
+safetensors>=0.4
+tqdm
