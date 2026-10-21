@@ -110,6 +110,15 @@ What is possible for free: Yahoo Finance 5-minute bars, usually a few minutes be
 - What is not possible: tick-by-tick, order-book depth, or placing orders. Your broker app stays the place
   for that; the dashboard is the place to see what the bot thinks.
 
+## Point-in-time universe (21 October 2026)
+
+`docs/data/lq45_history.csv` holds BEI's LQ45 constituent lists from Feb 2022 to Oct 2026 (parsed from the
+exchange's evaluation announcements). `python -m bot.engine --backtest --universe lq45 --start 2022-02-01`
+runs the rulebook on the names that were actually in LQ45 on each date, with no hindsight. Over Feb 2022 to
+Oct 2026 the hand-picked 30 made −0.4% a year and the honest universe −5.8% a year (IHSG −4.8%): the hindsight
+list was worth about 5 points a year. Production stays on the hand-picked 30 until the exclusion list is
+populated from BEI's HSC announcement. See `RESEARCH.md` for the ledger, the paper cards and the next trials.
+
 ## Mirror mode: run the bot on what you actually own (20 October 2026)
 
 The model account can be seeded from your real holdings, so every evening's orders apply to your real book
