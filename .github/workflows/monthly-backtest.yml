@@ -1,0 +1,31 @@
+# Monthly: reruns the 10-year walk-forward test for the v1 baseline and v2, and records the trial count (DSR).
+name: Monthly backtest
+on:
+  schedule:
+    - cron: "0 11 1 * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: bot-data
+  cancel-in-progress: false
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m bot.tasks backtest
+      - name: Save to the dashboard
+        run: |
+          git config user.name "idx-trend-bot"
+          git config user.email "idx-trend-bot@users.noreply.github.com"
+          git add docs/data
+          git diff --cached --quiet || git commit -m "Backtest $(date -u +%F)"
+          git pull --rebase origin main || true
+          git push

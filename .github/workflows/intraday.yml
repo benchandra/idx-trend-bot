@@ -1,0 +1,39 @@
+# Intraday check every 15 minutes while IDX is open: prices and news for holdings, Telegram alerts only on events,
+# and docs/data/live.json + intraday.json for the dashboard. (GitHub's timers can start 5-15 minutes late.)
+name: Intraday check
+on:
+  schedule:
+    - cron: "*/15 2-8 * * 1-5"   # 09:00-15:59 WIB
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: bot-data
+  cancel-in-progress: false
+jobs:
+  intraday:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Check the market
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python -m bot.tasks intraday
+          python -m bot.live
+      - name: Save to the dashboard
+        run: |
+          git config user.name "idx-trend-bot"
+          git config user.email "idx-trend-bot@users.noreply.github.com"
+          git add docs/data
+          git diff --cached --quiet || git commit -m "Intraday $(date -u +%FT%H:%M)"
+          git pull --rebase origin main || true
+          git push

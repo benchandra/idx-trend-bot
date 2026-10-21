@@ -1,0 +1,48 @@
+# Kronos check: scores recent Kronos forecasts against what actually happened. Start it by hand from Actions.
+name: Kronos check
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Sessions to score (each day is a fresh forecast; 30 days ≈ 20-40 minutes)"
+        default: "30"
+      names:
+        description: "Names to score, comma-separated, or all"
+        default: "IHSG,BBCA,BMRI,BBRI"
+      paths:
+        description: "Sampled paths per forecast"
+        default: "16"
+permissions:
+  contents: write
+concurrency:
+  group: bot-data
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Cache the Kronos model files
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: kronos-weights-v1
+      - name: Install (CPU-only PyTorch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Score the last N sessions
+        run: python -m bot.kronos_signal --eval "${{ inputs.days }}" --names "${{ inputs.names }}" --paths "${{ inputs.paths }}"
+      - name: Save results to the dashboard
+        run: |
+          git config user.name "idx-trend-bot"
+          git config user.email "idx-trend-bot@users.noreply.github.com"
+          git add docs/data/kronos_eval.json docs/data/kronos_eval.csv
+          git diff --cached --quiet || git commit -m "Kronos check $(date -u +%F)"
+          git pull --rebase origin main || true
+          git push
