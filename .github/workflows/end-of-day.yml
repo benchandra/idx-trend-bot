@@ -6,6 +6,11 @@ on:
     - cron: "30 10 * * 1-5"   # 17:30 WIB
     - cron: "0 12 * * 1-5"    # 19:00 WIB retry (prices sometimes publish late)
   workflow_dispatch:
+    inputs:
+      resend:
+        description: "Resend the last note even if this session was already processed"
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -40,7 +45,7 @@ jobs:
           KRONOS: ${{ vars.KRONOS || 'on' }}             # set the variable to "off" to skip Kronos
           KRONOS_PATHS: ${{ vars.KRONOS_PATHS || '16' }}  # sampled paths per name
           KRONOS_NAMES: ${{ vars.KRONOS_NAMES || 'watch' }} # "watch" or "all" 30 stocks
-        run: python -m bot.tasks eod
+        run: python -m bot.tasks eod ${{ inputs.resend && '--force' || '' }}
       - name: Save results to the dashboard
         run: |
           git config user.name "idx-trend-bot"
