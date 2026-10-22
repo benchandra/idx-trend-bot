@@ -34,7 +34,9 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          KRONOS: ${{ vars.KRONOS }}
+          KRONOS: ${{ vars.KRONOS || 'on' }}
+          KRONOS_PATHS: ${{ vars.KRONOS_PATHS || '16' }}
+          KRONOS_NAMES: ${{ vars.KRONOS_NAMES || 'watch' }}
         run: |
           python -m bot.tasks seed --positions "${{ inputs.positions }}" --cash "${{ inputs.cash }}"
           python -m bot.tasks eod --force

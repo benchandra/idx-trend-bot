@@ -35,10 +35,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          START_CASH: ${{ vars.START_CASH }}
-          KRONOS: ${{ vars.KRONOS }}            # set the variable to "off" to skip Kronos
-          KRONOS_PATHS: ${{ vars.KRONOS_PATHS }} # default 16 sampled paths per name
-          KRONOS_NAMES: ${{ vars.KRONOS_NAMES }} # "watch" (default) or "all" 30 stocks
+          # unset repository variables arrive as "", so defaults are given here too
+          START_CASH: ${{ vars.START_CASH || '100000000' }}
+          KRONOS: ${{ vars.KRONOS || 'on' }}             # set the variable to "off" to skip Kronos
+          KRONOS_PATHS: ${{ vars.KRONOS_PATHS || '16' }}  # sampled paths per name
+          KRONOS_NAMES: ${{ vars.KRONOS_NAMES || 'watch' }} # "watch" or "all" 30 stocks
         run: python -m bot.tasks eod
       - name: Save results to the dashboard
         run: |
