@@ -33,10 +33,27 @@ SYSTEM = (
     "line read of the market day, and name the one thing that would change the picture tomorrow. Be concrete: use the "
     "rupiah levels in the brief. Treat the Kronos forecasts as weak evidence (16 samples, unreliable right after crash "
     "days) and the news mood as background. Never recommend averaging down into a falling position. "
-    'Reply with JSON only, no markdown: {"market": string (max 40 words), "orders": [{"sym": string, "why": string '
-    '(max 14 words), "agree": boolean, "objection": string (max 18 words, empty when agree)}], "holds": [{"sym": '
-    'string, "note": string (max 12 words)}], "watch": string (max 22 words)}'
+    "Return the note by calling the committee_note tool. Lengths: market max 40 words, why max 14 words, objection "
+    "max 18 words (empty when agree), note max 12 words, watch max 22 words."
 )
+# A forced tool call makes the API return the answer as parsed JSON, so a stray quote in the text cannot break it.
+TOOL = {
+    "name": "committee_note",
+    "description": "The committee's evening note on tonight's orders and holdings.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "market": {"type": "string"},
+            "orders": {"type": "array", "items": {"type": "object", "properties": {
+                "sym": {"type": "string"}, "why": {"type": "string"}, "agree": {"type": "boolean"},
+                "objection": {"type": "string"}}, "required": ["sym", "why", "agree", "objection"]}},
+            "holds": {"type": "array", "items": {"type": "object", "properties": {
+                "sym": {"type": "string"}, "note": {"type": "string"}}, "required": ["sym", "note"]}},
+            "watch": {"type": "string"},
+        },
+        "required": ["market", "orders", "holds", "watch"],
+    },
+}
 
 
 def _f(x, nd=4):
@@ -105,15 +122,21 @@ def ask(b: dict, key: str, model: str = MODEL) -> dict | None:
         try:
             r = requests.post("https://api.anthropic.com/v1/messages", timeout=120, headers={
                 "x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
-                json={"model": m, "max_tokens": 1200, "system": SYSTEM,
+                json={"model": m, "max_tokens": 2000, "system": SYSTEM, "tools": [TOOL],
+                      "tool_choice": {"type": "tool", "name": TOOL["name"]},
                       "messages": [{"role": "user", "content": json.dumps(b, ensure_ascii=False)}]})
             if r.status_code in (400, 404) and "model" in r.text.lower() and m != FALLBACK_MODEL:
                 print(f"Committee: model {m} rejected, trying {FALLBACK_MODEL}")
                 continue
             r.raise_for_status()
-            text = "".join(x.get("text", "") for x in r.json().get("content", []))
-            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-            out = json.loads(text[text.find("{"): text.rfind("}") + 1])
+            body = r.json()
+            if body.get("stop_reason") == "max_tokens":
+                raise ValueError("reply cut off at max_tokens")
+            out = next((x["input"] for x in body.get("content", []) if x.get("type") == "tool_use"), None)
+            if out is None:  # no tool call: fall back to reading JSON out of the text
+                text = "".join(x.get("text", "") for x in body.get("content", []))
+                text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
+                out = json.loads(text[text.find("{"): text.rfind("}") + 1])
             out = dict(market=str(out.get("market", ""))[:300], watch=str(out.get("watch", ""))[:200],
                        orders=[dict(sym=str(o.get("sym", "")).upper(), why=str(o.get("why", ""))[:120],
                                     agree=bool(o.get("agree", True)), objection=str(o.get("objection", ""))[:160])

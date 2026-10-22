@@ -4,7 +4,9 @@
   python -m bot.tasks intraday   every 30 minutes while the market is open
   python -m bot.tasks backtest   once a month
 Options: --dry-run prints Telegram messages instead of sending them,
---cache FILE reads daily prices from a pickle (offline tests), --force ignores the clock.
+--cache FILE reads daily prices from a pickle (offline tests), --force ignores the clock (intraday) or, for eod,
+sends the note again even when the session was already processed.
+eod never uses today's bar before 16:30 WIB: while the market is open that bar is a mid-day price, not a close.
 
 Secrets (GitHub > Settings > Secrets and variables > Actions):
   TELEGRAM_TOKEN, TELEGRAM_CHAT_ID   where alerts go
@@ -76,6 +78,26 @@ def set_status(**kw) -> None:
 
 def load_raw(a) -> pd.DataFrame:
     return pd.read_pickle(a.cache) if a.cache else engine.download()
+
+
+CLOSE_DONE = 16 * 60 + 30  # 16:30 WIB: IDX closes at 16:00, Yahoo's daily bar settles a few minutes later
+
+
+def drop_unfinished_today(raw: pd.DataFrame, now: datetime | None = None) -> pd.DataFrame:
+    """While the market is open Yahoo already shows a bar for today, built from intraday prices. Treating it as a
+    close would mark today as done, build tomorrow's orders from a mid-day price and block tonight's real run.
+    Before 16:30 WIB that bar is dropped, so the job works on the last finished session."""
+    now = now or datetime.now(WIB)
+    if now.hour * 60 + now.minute >= CLOSE_DONE:
+        return raw
+    idx = pd.DatetimeIndex(raw.index)
+    if idx.tz is not None:
+        idx = idx.tz_convert("Asia/Jakarta").tz_localize(None)
+    keep = idx.normalize() < pd.Timestamp(now.date())
+    if keep.all():
+        return raw
+    print(f"Market not closed yet ({now:%H:%M} WIB): ignoring today's unfinished bar.")
+    return raw[keep]
 
 
 # ------------------------------------------------------------------ end of day
@@ -168,7 +190,7 @@ def compact_message(latest: dict, st: dict, ev: dict, cm: dict) -> str:
 
 def cmd_eod(a) -> None:
     DATA.mkdir(parents=True, exist_ok=True)
-    raw = load_raw(a)
+    raw = load_raw(a) if a.cache else drop_unfinished_today(load_raw(a))
     ppath = DATA / "portfolio.json"
     held = list(json.loads(ppath.read_text()).get("positions", {})) if ppath.exists() else []
     engine.configure(os.environ.get("BOT_RULES", "v2"))  # v2 in production; the stress gauge is computed and shown
@@ -202,7 +224,8 @@ def cmd_eod(a) -> None:
     if new_day or a.force:
         send(compact_message(latest, st, ev, cm), a.dry_run)
     else:
-        print("No new session since the last run (holiday, or prices not published yet). Nothing sent.")
+        print(f"Session {latest['asof']} was already processed by an earlier run (or no new prices yet). Nothing sent. "
+              "Run the workflow with 'Resend the last note' ticked to send it again.")
 
 
 # ------------------------------------------------------------------ intraday
