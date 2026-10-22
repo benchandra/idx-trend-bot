@@ -1,4 +1,4 @@
 date,session,sym,side,lots,limit,agree,objection,why,source
-2026-10-22,2026-10-23,BBCA,sell,83,5050.0,True,,Down 21.1% from 6562→5175. Closed below 200d avg. Stop at 4094.,claude-haiku-4-5-20251001
-2026-10-22,2026-10-23,BBRI,sell,23,2840.0,True,,Down 29.2% from 4095→2900. Closed below 200d avg. Stop at 2164.,claude-haiku-4-5-20251001
-2026-10-22,2026-10-23,BMRI,sell,85,3770.0,True,,Down 22.3% from 4956→3850. Closed below 200d avg. Stop at 2865.,claude-haiku-4-5-20251001
+2026-10-22,2026-10-23,BBCA,sell,83,5050.0,False,Kronos shows 100% up probability; news shows global accumulation. Hold.,"Closed below 200-day MA at 5175; rule triggers exit at limit 5050, floor 4820.",claude-haiku-4-5-20251001
+2026-10-22,2026-10-23,BBRI,sell,23,2840.0,False,Kronos neutral; global investors buying. Do not panic-sell into weakness.,"Closed below 200-day MA at 2900; rule triggers exit at limit 2840, floor 2700.",claude-haiku-4-5-20251001
+2026-10-22,2026-10-23,BMRI,sell,85,3770.0,True,,"Closed below 200-day MA at 3850; rule triggers exit at limit 3770, floor 3590.",claude-haiku-4-5-20251001
