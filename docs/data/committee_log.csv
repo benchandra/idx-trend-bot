@@ -1,0 +1,4 @@
+date,session,sym,side,lots,limit,agree,objection,why,source
+2026-10-22,2026-10-23,BBCA,sell,83,5125.0,True,,Closed below 200-day average; sell 83 lots at 5125 IDR floor 4890.,claude-haiku-4-5-20251001
+2026-10-22,2026-10-23,BBRI,sell,23,2790.0,False,"Kronos only 25% up, but rule is rule. Respect stop discipline.",Closed below 200-day average; sell 23 lots at 2790 IDR floor 2660.,claude-haiku-4-5-20251001
+2026-10-22,2026-10-23,BMRI,sell,85,3700.0,True,,Closed below 200-day average; sell 85 lots at 3700 IDR floor 3520.,claude-haiku-4-5-20251001
