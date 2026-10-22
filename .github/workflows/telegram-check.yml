@@ -1,0 +1,65 @@
+# Telegram check: shows which bot the token belongs to, what chat TELEGRAM_CHAT_ID points at,
+# which chats have recently messaged the bot, and sends a test message. Run it by hand from the Actions tab.
+name: Telegram check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the bot and the chat
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        shell: python
+        run: |
+          import json, os, urllib.error, urllib.parse, urllib.request
+
+          tok = os.environ.get("TELEGRAM_TOKEN", "")
+          chat = os.environ.get("TELEGRAM_CHAT_ID", "")
+          print("token set:", bool(tok.strip()), "| token has spaces/newlines:", tok != tok.strip())
+          print("chat id set:", bool(chat.strip()), "| has spaces/newlines:", chat != chat.strip(),
+                "| digits:", len(chat.strip().lstrip("-")), "| numeric:", chat.strip().lstrip("-").isdigit(),
+                "| negative (group/channel):", chat.strip().startswith("-"))
+          tok, chat = tok.strip(), chat.strip()
+
+          def call(method, **params):
+              data = urllib.parse.urlencode(params).encode() if params else None
+              try:
+                  with urllib.request.urlopen(f"https://api.telegram.org/bot{tok}/{method}", data=data, timeout=30) as r:
+                      return json.load(r)
+              except urllib.error.HTTPError as e:
+                  try:
+                      return json.loads(e.read())
+                  except Exception:
+                      return {"ok": False, "error_code": e.code}
+
+          def who(c):
+              return f"{c.get('type')} | {c.get('title') or ((c.get('first_name') or '') + ' ' + (c.get('last_name') or '')).strip()} | @{c.get('username') or '-'}"
+
+          me = call("getMe")
+          print("\n1) Bot behind TELEGRAM_TOKEN:", ("@" + me["result"]["username"]) if me.get("ok") else me)
+
+          gc = call("getChat", chat_id=chat)
+          print("2) Chat behind TELEGRAM_CHAT_ID:", who(gc["result"]) if gc.get("ok") else gc)
+
+          wh = call("getWebhookInfo")
+          if wh.get("ok") and wh["result"].get("url"):
+              print("   note: a webhook is set on this bot, so the list below will be empty")
+          up = call("getUpdates", limit=100, timeout=0)
+          seen = {}
+          for u in up.get("result", []) if up.get("ok") else []:
+              m = u.get("message") or u.get("edited_message") or u.get("channel_post") or u.get("my_chat_member") or {}
+              c = m.get("chat")
+              if c:
+                  seen[str(c["id"])] = c
+          print(f"3) Chats that messaged this bot recently ({len(seen)}):")
+          for cid, c in seen.items():
+              print("   ", who(c), "| id ends", cid[-4:], "| SAME AS SECRET" if cid == chat else "| different from secret")
+          if not seen:
+              print("    none (send /start to the bot in Telegram, then run this again)")
+
+          r = call("sendMessage", chat_id=chat, text="Telegram check from idx-trend-bot: if you can read this, alerts reach this chat.")
+          print("\n4) Test message:", ("sent to " + who(r["result"]["chat"]) + " | message " + str(r["result"]["message_id"])) if r.get("ok") else r)
