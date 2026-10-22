@@ -108,7 +108,7 @@ def push(path: Path, branch: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser(description="Near-live quotes for the IDX Trend Bot dashboard")
     ap.add_argument("--every", type=int, default=0, help="seconds between passes; 0 = one pass and exit")
-    ap.add_argument("--branch", default=os.environ.get("LIVE_BRANCH", "live"))
+    ap.add_argument("--branch", default=os.environ.get("LIVE_BRANCH") or "live")
     ap.add_argument("--force", action="store_true", help="run even outside market hours")
     a = ap.parse_args()
     while True:

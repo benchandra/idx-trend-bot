@@ -33,12 +33,13 @@ import pandas as pd
 from . import engine
 
 VERSION = "0.1"
-MODEL = os.environ.get("KRONOS_MODEL", "NeoQuasar/Kronos-small")
-TOKENIZER = os.environ.get("KRONOS_TOKENIZER", "NeoQuasar/Kronos-Tokenizer-base")
-PATHS = int(os.environ.get("KRONOS_PATHS", "16"))      # sampled paths per name
-LOOKBACK = int(os.environ.get("KRONOS_LOOKBACK", "400"))  # daily bars of context (model maximum 512)
-HORIZON = 5                                             # sessions ahead
-CHUNK = int(os.environ.get("KRONOS_CHUNK", "64"))       # sequences per forward pass (memory)
+# GitHub Actions passes unset repository variables as "" (not absent), so every default uses `or`, never .get(x, d)
+MODEL = os.environ.get("KRONOS_MODEL") or "NeoQuasar/Kronos-small"
+TOKENIZER = os.environ.get("KRONOS_TOKENIZER") or "NeoQuasar/Kronos-Tokenizer-base"
+PATHS = int(os.environ.get("KRONOS_PATHS") or 16)        # sampled paths per name
+LOOKBACK = int(os.environ.get("KRONOS_LOOKBACK") or 400)  # daily bars of context (model maximum 512)
+HORIZON = 5                                               # sessions ahead
+CHUNK = int(os.environ.get("KRONOS_CHUNK") or 64)         # sequences per forward pass (memory)
 TEMP, TOP_P = 1.0, 0.9
 VOL_HI, VOL_LO = 1.3, 0.7                               # Kronos vol / GARCH vol disagreement flags
 NAMES_ALL = ["IHSG"] + engine.UNIVERSE
@@ -171,7 +172,7 @@ def run(raw: pd.DataFrame, latest: dict | None, outdir: Path, names: list[str] |
                     generated_utc=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"))
         (outdir / "kronos.json").write_text(json.dumps(info))
         return info
-    names = names or choose_names(latest, os.environ.get("KRONOS_NAMES", "watch"))
+    names = names or choose_names(latest, os.environ.get("KRONOS_NAMES") or "watch")
     held = set(held or [])
     windows, skipped = {}, []
     for s in names:

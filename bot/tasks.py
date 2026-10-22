@@ -157,7 +157,7 @@ def cmd_eod(a) -> None:
     if new_day:
         news.log_daily(DATA / "sentiment_log.csv", latest["asof"], summ)
     kr = None
-    if os.environ.get("KRONOS", "on").lower() not in ("off", "0", "false"):
+    if (os.environ.get("KRONOS") or "on").lower() not in ("off", "0", "false"):
         try:
             kr = kronos_signal.run(raw, latest, DATA, held=list(st["positions"]))
         except Exception as e:  # Kronos is optional: a failure here must not stop orders or alerts
@@ -286,7 +286,7 @@ def cmd_intraday(a) -> None:
 def cmd_seed(a) -> None:
     """Start (or restart) the model account from real holdings, so the bot's orders apply to what you actually own.
     --positions "BBCA 43 6562, BMRI 66 4956" = symbol, lots, average price. --cash = free cash in the account.
-    Only names in the bot's 30-stock universe are taken; anything else stays in your broker app, untouched."""
+    Names outside the bot's universe (GOTO, AADI, ...) are kept as unmanaged holdings: valued, never traded."""
     lp = DATA / "latest.json"
     latest = json.loads(lp.read_text()) if lp.exists() else None
     close = {x["sym"]: x["close"] for x in latest["stocks"]} if latest else {}
@@ -297,17 +297,17 @@ def cmd_seed(a) -> None:
         parts = item.replace("@", " ").split()
         if len(parts) != 3:
             raise SystemExit(f"Cannot read '{item}': use SYMBOL LOTS AVERAGE_PRICE, e.g. BBCA 43 6562")
-        sym, lots, avg = parts[0].upper(), int(float(parts[1])), float(parts[2])
-        if sym not in engine.UNIVERSE:
+        sym, lots, avg = parts[0].upper(), float(parts[1]), float(parts[2])  # lots may be fractional (odd lots)
+        shares, c = int(round(lots * 100)), close.get(sym, avg)
+        managed = sym in engine.UNIVERSE
+        if not managed:
             skipped.append(sym)
-            continue
-        shares, c = lots * 100, close.get(sym, avg)
-        st["positions"][sym] = dict(shares=shares, cost=shares * avg, entry=day, peak=max(avg, c), last=c)
+        st["positions"][sym] = dict(shares=shares, cost=shares * avg, entry=day, peak=max(avg, c), last=c, managed=managed)
     st["start_cash"] = float(a.cash) + sum(x["cost"] for x in st["positions"].values())
-    st["note"] = f"seeded from real holdings on {day}" + (f"; outside the universe, left alone: {', '.join(skipped)}" if skipped else "")
+    st["note"] = f"seeded from real holdings on {day}" + (f"; held but not managed by the bot: {', '.join(skipped)}" if skipped else "")
     DATA.mkdir(parents=True, exist_ok=True)
     portfolio.save(DATA / "portfolio.json", st)
-    print(f"seeded {len(st['positions'])} positions, cash {a.cash:,.0f}, cost basis {st['start_cash']:,.0f}; skipped {skipped}")
+    print(f"seeded {len(st['positions'])} positions, cash {a.cash:,.0f}, cost basis {st['start_cash']:,.0f}; unmanaged {skipped}")
 
 
 def cmd_backtest(a) -> None:
