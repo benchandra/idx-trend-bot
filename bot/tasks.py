@@ -59,6 +59,11 @@ def send(text: str, dry: bool) -> None:
             "chat_id": chat, "text": text[i: i + 3800], "parse_mode": "HTML", "disable_web_page_preview": True})
         if r.status_code != 200:
             print("Telegram error", r.status_code, r.text[:300])
+        else:  # log where it landed, so a "sent but never arrived" run shows the bot and chat it went to
+            res = r.json().get("result", {})
+            c = res.get("chat", {})
+            print("Telegram sent:", c.get("type"), c.get("title") or c.get("first_name") or "",
+                  "@" + (c.get("username") or "-"), "message", res.get("message_id"))
 
 
 def dashboard_url() -> str:
