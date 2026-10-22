@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import engine, kronos_signal, news, portfolio
+from . import committee, engine, kronos_signal, news, portfolio
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "docs" / "data"
@@ -99,44 +99,70 @@ def kronos_lines(kr: dict | None, st: dict) -> list[str]:
     return out
 
 
-def eod_message(latest: dict, st: dict, ev: dict, summ: dict, kr: dict | None = None) -> str:
+def compact_message(latest: dict, st: dict, ev: dict, cm: dict) -> str:
+    """The evening note: what to do, at what prices, why, and one line on the market. Details are on the dashboard."""
     g, hist = latest["regime"], st["history"]
     eq, start = hist[-1]["equity"], st["start_cash"]
     sv = latest.get("svi") or {}
-    out = [f"<b>IDX Trend Bot: {day_label(latest['asof'])} close</b>",
-           f"IHSG {g['ihsg_close']:,.0f} ({g['ihsg_change']:+.2%}). " +
-           ("Market brake off." if g["above"] else "Market brake on: at most 50% invested.") +
-           (f" Stress gauge {sv['value']:.2f} ({sv['label']}{', MSCI event window' if sv.get('event_window') else ''}"
-            f"{': invested at most ' + format(g['cap'], '.0%') if sv.get('applied') else '; shown only'})." if sv.get("value") is not None else ""),
-           f"Model account {rp(eq)} ({eq / start - 1:+.2%} since {day_label(st['start_date'])}), "
-           f"{hist[-1]['invested']:.0%} invested. Paper money only."]
-    if ev["filled"]:
-        out += ["", "<b>Filled today</b>"] + [
-            f"• {'Bought' if t['side'] == 'buy' else 'Sold'} {t['sym']} {t['shares'] // 100} lots at {rp(t['price'])}"
-            for t in ev["filled"]]
-    if ev["unfilled"]:
-        out += ["", "<b>Not filled</b>"] + [f"• {o['side'].title()} {o['sym']}: {esc(o['note'])}" for o in ev["unfilled"]]
-    out += ["", f"<b>Orders for {day_label(latest['next_session'])}</b>"]
-    if st["pending"]:
-        out += [f"• {o['side'].title()} {o['sym']} {o['lots']} lots, limit {rp(o['limit'])}. {esc(o['why'])}"
-                for o in st["pending"]]
-    elif latest["rebalance_today"]:
-        out.append("None: the holdings already match the targets.")
+    stress = f" · stress {sv['label']}" if sv.get("label") else ""
+    out = [f"<b>IDX Trend Bot · {day_label(latest['asof'])}</b>",
+           f"IHSG {g['ihsg_close']:,.0f} ({g['ihsg_change']:+.1%}) · brake {'off' if g['above'] else 'on, max 50%'}{stress}",
+           f"Account {rp(eq)} ({eq / start - 1:+.1%} since {day_label(st['start_date'])}), {hist[-1]['invested']:.0%} invested · paper"]
+    if cm.get("market"):
+        out += ["", f"<i>{esc(cm['market'])}</i>"]
+    out += ["", f"<b>Do on {day_label(latest['next_session'])}</b>"]
+    orders = cm.get("orders") or []
+    if orders:
+        rows = []
+        for o in orders:
+            lim = f"lim {o['limit']:,.0f}" if o.get("limit") else ""
+            fc = o.get("floor_or_cap")
+            edge = (f"floor {fc:,.0f}" if o["side"] == "sell" else f"cap {fc:,.0f}") if fc else ""
+            rows.append(f"{o['side'].upper():<4} {o['sym']:<4} {o['lots']:>4} lot  {lim:<10} {edge}")
+        out.append("<pre>" + "\n".join(rows) + "</pre>")
+        for o in orders:
+            mark = "✓" if o.get("agree", True) else "⚠"
+            line = f"• {o['sym']}: {esc(o.get('why') or o.get('rule') or '')} {mark}"
+            if not o.get("agree", True) and o.get("objection"):
+                line += f" {esc(o['objection'])} (order stands)"
+            out.append(line)
+        sells = sum(o["lots"] * 100 * o["limit"] for o in orders if o["side"] == "sell" and o.get("limit"))
+        buys = sum(o["lots"] * 100 * o["limit"] for o in orders if o["side"] == "buy" and o.get("limit"))
+        if sells or buys:
+            cash_after = st["cash"] + sells * (1 - latest["params"]["sell_fee"]) - buys * (1 + latest["params"]["buy_fee"])
+            out.append(f"Cash after fills ≈ {rp(cash_after)} ({cash_after / eq:.0%} of the account)")
+    elif latest.get("rebalance_today"):
+        out.append("Nothing: holdings already match the targets.")
     else:
-        out.append(f"None. Next rebalance after the {day_label(latest['next_rebalance_close'])} close.")
-    lines = []
-    for t in list(st["positions"]) + ["MARKET"]:
-        d = summ.get(t)
-        if not d:
+        out.append(f"Nothing. Next rebalance after the {day_label(latest['next_rebalance_close'])} close.")
+    ordered = {o["sym"] for o in orders}
+    notes = {h["sym"]: h["note"] for h in cm.get("holds") or []}
+    held = []
+    for sym, p in st["positions"].items():
+        if sym in ordered:
             continue
-        pick = d["worst"] if abs(d["worst"]["s"]) >= abs(d["best"]["s"]) else d["best"]
-        lines.append(f"• {'Market' if t == 'MARKET' else t} {d['avg']:+.2f} ({d['n']} headlines): {esc(pick['title'][:110])}")
-    if lines:
-        out += ["", "<b>News mood, last 24h</b> (−1 to +1)"] + lines
-    out += kronos_lines(kr, st)
+        if not p.get("managed", True):
+            continue
+        stop = f" stop {p['stop_price']:,.0f}" if p.get("stop_price") else ""
+        note = f" ({esc(notes[sym])})" if notes.get(sym) else ""
+        held.append(f"{sym}{stop}{note}")
+    unmanaged = [sym for sym, p in st["positions"].items() if not p.get("managed", True)]
+    if held or unmanaged:
+        out += ["", "<b>Holding</b>"]
+        if held:
+            out.append(" · ".join(held))
+        if unmanaged:
+            out.append("Not managed by the bot: " + ", ".join(unmanaged))
+    if ev["filled"]:
+        out += ["", "Filled today: " + "; ".join(
+            f"{'bought' if t['side'] == 'buy' else 'sold'} {t['sym']} {t['shares'] // 100} lot @ {t['price']:,.0f}" for t in ev["filled"])]
+    if ev["unfilled"]:
+        out.append("Not filled: " + "; ".join(f"{o['side']} {o['sym']} ({esc(o['note'])})" for o in ev["unfilled"]))
+    if cm.get("watch"):
+        out += ["", f"Watch: {esc(cm['watch'])}"]
     url = dashboard_url()
     if url:
-        out += ["", f'<a href="{url}">Open the dashboard</a>']
+        out += ["", f'<a href="{url}">Dashboard</a> has the news, Kronos and stress-gauge detail.']
     return "\n".join(out)
 
 
@@ -164,10 +190,17 @@ def cmd_eod(a) -> None:
             print("Kronos failed:", repr(e))
             kr = dict(ok=False, reason=str(e)[:120])
             (DATA / "kronos.json").write_text(json.dumps(kr))
+    try:
+        cm = committee.run(latest, st, kr, summ, key, DATA)
+    except Exception as e:  # the note must go out even if the committee breaks
+        print("Committee failed:", repr(e))
+        cm = committee.rules_only(latest, st)
+        cm["orders"] = [dict(o, floor_or_cap=o.get("arb") if o["side"] == "sell" else o.get("ara"), agree=True, objection="") for o in st["pending"]]
     set_status(last_eod_utc=now_utc(), eod_asof=latest["asof"], sentiment_method="claude" if key else "keywords",
-               kronos=("ok " + (kr.get("asof") or "")) if kr and kr.get("ok") else ("off" if kr is None else "failed"))
+               kronos=("ok " + (kr.get("asof") or "")) if kr and kr.get("ok") else ("off" if kr is None else "failed"),
+               committee=cm.get("source", "rules"), decisions_logged=int(len(cm.get("orders") or [])))
     if new_day or a.force:
-        send(eod_message(latest, st, ev, summ, kr), a.dry_run)
+        send(compact_message(latest, st, ev, cm), a.dry_run)
     else:
         print("No new session since the last run (holiday, or prices not published yet). Nothing sent.")
 

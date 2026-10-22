@@ -119,6 +119,23 @@ Oct 2026 the hand-picked 30 made −0.4% a year and the honest universe −5.8% 
 list was worth about 5 points a year. Production stays on the hand-picked 30 until the exclusion list is
 populated from BEI's HSC announcement. See `RESEARCH.md` for the ledger, the paper cards and the next trials.
 
+## AI committee and the short evening note (22 October 2026)
+
+The Telegram note is now short: the market line, a table of what to do (action, lots, limit, and tomorrow's
+price-limit floor or cap), one plain reason per order, holdings with their stop levels, cash after fills, and
+one thing to watch. News, Kronos and the stress gauge stay on the dashboard.
+
+The reasons come from an **AI committee**: Claude reads a compact brief (regime, stress gauge, positions, orders,
+candidates, Kronos view, news mood, MSCI dates) and returns the market line, a reason and agree/objection per
+order, a note per holding, and the watch line. **It never changes an order**; where it disagrees it says so and
+the rulebook's order stands. Every verdict is appended to `docs/data/committee_log.csv` so its judgement can be
+scored later against what happened.
+
+Setup: add the repository secret `ANTHROPIC_API_KEY` (Settings → Secrets and variables → Actions → Secrets). The
+same key also upgrades news scoring from keywords to Claude. Optional variable `COMMITTEE_MODEL` (default
+`claude-sonnet-5-5`; falls back to the Haiku model used for news if rejected). Cost is roughly one short call a day.
+Without the key the note still goes out with the rulebook's own reasons.
+
 ## Mirror mode: run the bot on what you actually own (20 October 2026)
 
 The model account can be seeded from your real holdings, so every evening's orders apply to your real book

@@ -261,7 +261,7 @@ async function getJSON(name) {
   try { const r = await fetch("data/" + name + "?t=" + Date.now(), { cache: "no-store" }); return r.ok ? await r.json() : null; }
   catch (e) { return null; }
 }
-let latest = null, backtest = null, pf = null, newsData = null, intra = null, status = null, kronos = null, kronosEval = null, live = null;
+let latest = null, backtest = null, pf = null, newsData = null, intra = null, status = null, kronos = null, kronosEval = null, live = null, committeeData = null;
 
 function lineChart(host, dates, series, opts) {
   const W = Math.max(300, Math.round(host.clientWidth || 700)), H = opts.h || 230;
@@ -307,6 +307,16 @@ function renderToday() {
   box.append(hero);
   box.append(el("div", { id: "liveBox" }));
   renderLive();
+  if (committeeData && committeeData.date === latest.asof) {
+    const c = committeeData, src = c.source === "rules" ? "rulebook reasons (no committee key)" : "AI committee, " + c.source;
+    const wrap = el("div", { class: "notice" });
+    wrap.append(el("p", null, el("b", { text: "Tonight's note " }), el("span", { class: "muted", text: "(" + src + ")" })));
+    if (c.market) wrap.append(el("p", { text: c.market }));
+    (c.orders || []).forEach(o => wrap.append(el("p", { class: "small" }, el("b", { text: o.side.toUpperCase() + " " + o.sym + ": " }), (o.why || o.rule || "") + (o.agree ? " ✓" : " ⚠ " + (o.objection || "") + " (order stands)"))));
+    (c.holds || []).forEach(h => wrap.append(el("p", { class: "small muted", text: "Holding " + h.sym + ": " + h.note })));
+    if (c.watch) wrap.append(el("p", { class: "small", text: "Watch: " + c.watch }));
+    box.append(wrap);
+  }
   if (backtest && backtest.stats.strategy.cagr < backtest.stats.ihsg.cagr) box.append(el("div", { class: "notice" }, el("p", null, el("b", { text: "Paper money only. " }),
     "In the 2016–2026 test this version made " + pct(backtest.stats.strategy.cagr) + " a year after costs, less than the IHSG's " + pct(backtest.stats.ihsg.cagr) + ". See Backtest.")));
   hero.append(el("div", { class: "sub", text: latest.rebalance_today ? "Rebalance day: new targets were set at the " + fmtDay(latest.asof) + " close."
@@ -606,8 +616,8 @@ let rt = null;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { redraws.forEach(f => f()); if (renderBacktest.draw && !$("#backtest").hidden) renderBacktest.draw(); if (renderKronos.draw && !$("#kronos").hidden) renderKronos.draw(); }, 150); });
 
 async function load() {
-  const got = await Promise.all(["latest.json", "backtest.json", "portfolio.json", "news.json", "intraday.json", "status.json", "kronos.json", "kronos_eval.json", "live.json"].map(getJSON));
-  [latest, backtest, pf, newsData, intra, status, kronos, kronosEval, live] = got;
+  const got = await Promise.all(["latest.json", "backtest.json", "portfolio.json", "news.json", "intraday.json", "status.json", "kronos.json", "kronos_eval.json", "live.json", "committee.json"].map(getJSON));
+  [latest, backtest, pf, newsData, intra, status, kronos, kronosEval, live, committeeData] = got;
   if (!latest) {
     const msg = "No data yet. It appears after the first End of day run (see the setup guide).";
     $("#asof").textContent = msg; ["#todayBody", "#newsBody", "#kronosBody", "#btBody", "#aboutBody"].forEach(s => $(s).replaceChildren(el("p", { class: "muted", text: msg }))); return;
