@@ -2,7 +2,7 @@ date,session,sym,side,lots,limit,agree,objection,why,source
 2026-10-22,2026-10-23,BBCA,sell,83,5050.0,False,Kronos shows 100% up probability; news shows global accumulation. Hold.,"Closed below 200-day MA at 5175; rule triggers exit at limit 5050, floor 4820.",claude-haiku-4-5-20251001
 2026-10-22,2026-10-23,BBRI,sell,23,2840.0,False,Kronos neutral; global investors buying. Do not panic-sell into weakness.,"Closed below 200-day MA at 2900; rule triggers exit at limit 2840, floor 2700.",claude-haiku-4-5-20251001
 2026-10-22,2026-10-23,BMRI,sell,85,3770.0,True,,"Closed below 200-day MA at 3850; rule triggers exit at limit 3770, floor 3590.",claude-haiku-4-5-20251001
-2026-10-23,2026-10-26,INDF,buy,11,6825.0,False,Kronos median -2.0%; buyback noise doesn't fix the weak signal.,"Rank 2 momentum signal; buy at 6,825 IDR limit, cap 8,100.",claude-haiku-4-5-20251001
-2026-10-23,2026-10-26,ADRO,buy,32,2490.0,True,,"Rank 3 momentum signal; buy at 2,490 IDR limit, cap 3,070.",claude-haiku-4-5-20251001
-2026-10-23,2026-10-26,PTBA,buy,24,3320.0,False,Zero probability of 5-day rise (Kronos); insider just dumped.,"Rank 1 momentum signal; buy at 3,320 IDR limit, cap 4,100.",claude-haiku-4-5-20251001
-2026-10-23,2026-10-26,AKRA,buy,57,1405.0,False,Kronos median -5.0%; 6% probability of rise is red flag.,"Rank 4 momentum signal; buy at 1,405 IDR limit, cap 1,735.",claude-haiku-4-5-20251001
+2026-10-23,2026-10-26,INDF,buy,11,6825.0,True,,"Rank 2 momentum, buy 11 lots at 6,825 Rp, cap 8,100.",claude-haiku-4-5-20251001
+2026-10-23,2026-10-26,ADRO,buy,32,2490.0,True,,"Rank 3 momentum, buy 32 lots at 2,490 Rp, cap 3,070.",claude-haiku-4-5-20251001
+2026-10-23,2026-10-26,PTBA,buy,24,3320.0,False,"Insider selling, Kronos -15.9% forecast, rank doesn't justify.","Rank 1 momentum, buy 24 lots at 3,320 Rp, cap 4,100.",claude-haiku-4-5-20251001
+2026-10-23,2026-10-26,AKRA,buy,57,1405.0,False,"Kronos forecast -7.0%, only 6% prob up in 5d; weak signal.","Rank 4 momentum, buy 57 lots at 1,405 Rp, cap 1,735.",claude-haiku-4-5-20251001
