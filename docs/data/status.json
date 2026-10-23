@@ -1,12 +1,12 @@
 {
- "last_eod_utc": "2026-10-22 16:47",
- "eod_asof": "2026-10-22",
+ "last_eod_utc": "2026-10-23 15:19",
+ "eod_asof": "2026-10-23",
  "sentiment_method": "claude",
  "approval_mode": "manual",
  "risk_gate": "ACTIVE",
  "rules": "v2",
  "committee": "claude-haiku-4-5-20251001",
- "decisions_logged": 3,
- "kronos": "ok 2026-10-22",
+ "decisions_logged": 4,
+ "kronos": "ok 2026-10-23",
  "last_intraday_utc": "2026-10-23 07:11"
 }
