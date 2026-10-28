@@ -6,3 +6,4 @@ date,session,sym,side,lots,limit,agree,objection,why,source
 2026-10-23,2026-10-26,ADRO,buy,32,2490.0,True,,"Rank 3 momentum, buy 32 lots at 2,490 Rp, cap 3,070.",claude-haiku-4-5-20251001
 2026-10-23,2026-10-26,PTBA,buy,24,3320.0,False,"Insider selling, Kronos -15.9% forecast, rank doesn't justify.","Rank 1 momentum, buy 24 lots at 3,320 Rp, cap 4,100.",claude-haiku-4-5-20251001
 2026-10-23,2026-10-26,AKRA,buy,57,1405.0,False,"Kronos forecast -7.0%, only 6% prob up in 5d; weak signal.","Rank 4 momentum, buy 57 lots at 1,405 Rp, cap 1,735.",claude-haiku-4-5-20251001
+2026-10-28,2026-10-29,INDF,sell,11,6225.0,True,,Closed below 200-day average; stop-loss rule triggered.,claude-haiku-4-5-20251001
