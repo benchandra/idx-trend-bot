@@ -10,3 +10,5 @@ date,session,sym,side,lots,limit,agree,objection,why,source
 2026-10-28,2026-10-29,INDF,sell,11,6225.0,True,,Closed below 200-day average (6375 < 6770 avg); mechanical trend exit.,claude-haiku-4-5-20251001
 2026-10-30,2026-11-02,INDF,sell,11,6250.0,True,,Closed below 200-day MA (6400 vs 6500 band). Trend exit rule triggered.,claude-haiku-4-5-20251001
 2026-10-30,2026-11-02,AKRA,sell,57,1345.0,False,Selling losing position in high-stress regime risks locking loss.,Rebalance: 6-month return negative. Exit to reweigh ADRO/PTBA.,claude-haiku-4-5-20251001
+2026-10-29,2026-10-30,INDF,sell,11,6250.0,True,,"Closed below 200-day MA (6,275 < trend). Mechanical exit.",claude-haiku-4-5-20251001
+2026-10-29,2026-10-30,AKRA,sell,57,1345.0,False,"Exit forced despite positive news; Kronos unclear, rank 2 not convincing sell.",6-month return negative; rebalance exit at rank 2.,claude-haiku-4-5-20251001
