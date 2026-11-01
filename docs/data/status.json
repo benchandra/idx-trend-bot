@@ -8,5 +8,6 @@
  "committee": "claude-haiku-4-5-20251001",
  "decisions_logged": 2,
  "kronos": "ok 2026-10-29",
- "last_intraday_utc": "2026-10-30 08:18"
+ "last_intraday_utc": "2026-10-30 08:18",
+ "last_backtest_utc": "2026-11-01 16:57"
 }
