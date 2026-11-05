@@ -23,6 +23,8 @@ jobs:
     timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # the latest commit, not the one from when the run was queued (runs wait in the bot-data queue)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -37,7 +39,11 @@ jobs:
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
       - name: Score the last N sessions
-        run: python -m bot.kronos_signal --eval "${{ inputs.days }}" --names "${{ inputs.names }}" --paths "${{ inputs.paths }}"
+        env:  # inputs go through env, never pasted into the script, so typed text can't run as a command
+          DAYS: ${{ inputs.days }}
+          NAMES: ${{ inputs.names }}
+          PATHS: ${{ inputs.paths }}
+        run: python -m bot.kronos_signal --eval "$DAYS" --names "$NAMES" --paths "$PATHS"
       - name: Save results to the dashboard
         run: |
           git config user.name "idx-trend-bot"

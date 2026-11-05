@@ -22,6 +22,8 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # the latest commit, not the one from when the run was queued (runs wait in the bot-data queue)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

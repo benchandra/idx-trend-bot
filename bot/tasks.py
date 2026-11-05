@@ -105,6 +105,27 @@ def drop_unfinished_today(raw: pd.DataFrame, now: datetime | None = None) -> pd.
     return raw[keep]
 
 
+def last_finished_session(now: datetime | None = None) -> str:
+    """The newest session whose close has settled: today after 16:30 WIB on a trading day, else the trading day before."""
+    now = now or datetime.now(WIB)
+    day = now.date() if now.hour * 60 + now.minute >= CLOSE_DONE else now.date() - timedelta(days=1)
+    while day.weekday() >= 5 or day.strftime("%Y-%m-%d") in engine.HOLIDAYS:
+        day -= timedelta(days=1)
+    return day.strftime("%Y-%m-%d")
+
+
+def missing_last_session(raw: pd.DataFrame, now: datetime | None = None) -> str | None:
+    """Runs after midnight WIB got Yahoo data without the last session and processed the day before (26 Oct-4 Nov).
+    Returns the reason to skip, or None when the newest finished session is in the data."""
+    want = last_finished_session(now)
+    have = raw["Close"][engine.INDEX].dropna().index[-1].strftime("%Y-%m-%d")
+    if have >= want:
+        return None
+    return (f"Prices end on {have}, but the last finished session is {want}. Nothing changed and nothing sent; "
+            "the next run on time (17:30 or 19:00 WIB) will process it. If IDX was closed that day, add it to "
+            "engine.HOLIDAYS.")
+
+
 # ------------------------------------------------------------------ end of day
 
 
@@ -196,6 +217,10 @@ def compact_message(latest: dict, st: dict, ev: dict, cm: dict) -> str:
 def cmd_eod(a) -> None:
     DATA.mkdir(parents=True, exist_ok=True)
     raw = load_raw(a) if a.cache else drop_unfinished_today(load_raw(a))
+    skip = None if a.cache else missing_last_session(raw)
+    if skip:
+        print(skip)
+        return
     ppath = DATA / "portfolio.json"
     held = list(json.loads(ppath.read_text()).get("positions", {})) if ppath.exists() else []
     engine.configure(os.environ.get("BOT_RULES", "v2"))  # v2 in production; the stress gauge is computed and shown

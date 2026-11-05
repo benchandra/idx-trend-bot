@@ -102,6 +102,23 @@ What is possible for free: Yahoo Finance 5-minute bars, usually a few minutes be
 - **Level 1 (already on):** the Intraday workflow now runs every 15 minutes during the session and writes
   `live.json`; the Today tab shows a Live card and refreshes it every minute. GitHub's timers can start late,
   so expect 5–20 minutes of delay.
+- **Outside timer (5 November 2026):** from 22 Oct to 4 Nov GitHub started the intraday check only once or twice a
+  day, 5–13 hours late, and the end-of-day job mostly after midnight. A free timer at cron-job.org now starts the runs
+  through GitHub's "Run workflow" API; the GitHub timers stay on as a backup.
+  1. GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only
+     `idx-trend-bot`. Permissions: **Actions: read and write**, nothing else. Expiry: 1 year.
+  2. At cron-job.org (free account) create three jobs, each `POST`, time zone **Asia/Jakarta**, weekdays only,
+     headers `Authorization: Bearer <token>`, `Accept: application/vnd.github+json`,
+     `Content-Type: application/json`, body `{"ref":"main"}`:
+     - Intraday: `https://api.github.com/repos/benchandra/idx-trend-bot/actions/workflows/intraday.yml/dispatches`,
+       every 15 minutes from 08:45 to 16:15.
+     - End of day: `.../actions/workflows/end-of-day.yml/dispatches` at 17:30.
+     - End of day retry: the same URL at 19:00.
+  3. A good call returns `204 No Content`; the run appears in the Actions tab within a minute.
+  Set the timer up before relying on the end-of-day skip below: without it, GitHub's after-midnight runs now skip.
+  The token cannot read the secrets or edit files directly, but it can start, cancel, re-run or switch off any
+  workflow in this repository and delete run logs, so a leaked token could reset the paper account (Seed account)
+  or resend notes. Keep it only in cron-job.org; if it leaks, delete it on GitHub.
 - **Level 2 (about 1–5 minutes behind):** run `python -m bot.live --every 60` on any machine that stays on
   (a free always-on VM such as Oracle Cloud's free tier, a Raspberry Pi, or a laptop). Set two environment
   variables so it can push: `GITHUB_REPO` (for example `ben/idx-trend-bot`) and `GITHUB_TOKEN` (GitHub →

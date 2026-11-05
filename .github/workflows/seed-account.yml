@@ -21,6 +21,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main   # the latest commit, not the one from when the run was queued (runs wait in the bot-data queue)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -37,8 +39,11 @@ jobs:
           KRONOS: ${{ vars.KRONOS || 'on' }}
           KRONOS_PATHS: ${{ vars.KRONOS_PATHS || '16' }}
           KRONOS_NAMES: ${{ vars.KRONOS_NAMES || 'watch' }}
+          # inputs go through env, never pasted into the script, so typed text can't run as a command
+          POSITIONS: ${{ inputs.positions }}
+          CASH: ${{ inputs.cash }}
         run: |
-          python -m bot.tasks seed --positions "${{ inputs.positions }}" --cash "${{ inputs.cash }}"
+          python -m bot.tasks seed --positions "$POSITIONS" --cash "$CASH"
           python -m bot.tasks eod --force
       - name: Save to the dashboard
         run: |
