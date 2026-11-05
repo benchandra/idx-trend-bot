@@ -13,3 +13,4 @@ date,session,sym,side,lots,limit,agree,objection,why,source
 2026-10-30,2026-11-02,INDF,sell,11,6250.0,True,,Closed below 200-day moving average; trend exit rule triggered.,claude-haiku-4-5-20251001
 2026-10-30,2026-11-02,AKRA,sell,57,1345.0,True,,"Rebalance exit: 6-month return negative, failed to rank in top 2.",claude-haiku-4-5-20251001
 2026-11-03,2026-11-04,ADRO,sell,32,2270.0,True,,Trend break: closed below 200-day MA at 2320 rupiah,claude-haiku-4-5-20251001
+2026-11-05,2026-11-06,ADRO,sell,32,2280.0,True,,Trend exit rule: price closed below 200-day moving average at 2330 rupiah.,claude-haiku-4-5-20251001
